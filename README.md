@@ -35,3 +35,16 @@ to build the package.
 Additional comparisons with [MuJoCo](examples/comparisons/acrobot) and [contact-implicit trajectory optimization](examples/comparisons/hopper.jl) are available. 
 The path-following solver and hopper model can be found in [RoboDojo.jl](https://github.com/thowell/RoboDojo.jl).
 
+## Build 
+```
+cd /path/to/OptimizationDynamics
+julia
+activate .
+instantiate
+build
+```
+## Run
+```
+julia --project=.
+include("examples/planar_push.jl")
+```

@@ -145,4 +145,4 @@ visualize!(vis, planarpush, q_sol, Δt=h);
 
 # ## benchmark 
 solver.options.verbose = false
-@benchmark iLQR.solve!($solver, x̄, ū) setup=(x̄=deepcopy(x̄), ū=deepcopy(ū));
+# @benchmark iLQR.solve!($solver, x̄, ū) setup=(x̄=deepcopy(x̄), ū=deepcopy(ū));
