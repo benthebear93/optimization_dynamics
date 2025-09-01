@@ -42,6 +42,16 @@ include("../src/models/planar_push/model.jl")
 include("../src/models/planar_push/simulator.jl")
 include("../src/models/planar_push/codegen.jl")
 
+# fixed planar push 
+include("../src/models/fixed_planar_push/model.jl")
+include("../src/models/fixed_planar_push/simulator.jl")
+include("../src/models/fixed_planar_push/codegen.jl")
+
+# line planar push 
+include("../src/models/line_planar_push/model.jl")
+include("../src/models/line_planar_push/simulator.jl")
+include("../src/models/line_planar_push/codegen.jl")
+
 # rocket
 include("../src/models/rocket/model.jl")
 include("../src/models/rocket/simulator.jl")

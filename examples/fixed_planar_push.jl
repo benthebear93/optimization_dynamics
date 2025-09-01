@@ -3,12 +3,8 @@ const iLQR = OptimizationDynamics.IterativeLQR
 using LinearAlgebra
 using Random
 
-# ## visualization 
-vis = Visualizer() 
-render(vis);
-
 # ## mode
-MODE = :translate
+# MODE = :translate
 MODE = :rotate 
 
 # ## gradient bundle
@@ -18,11 +14,11 @@ GB = false
 h = 0.1
 T = 26
 
-im_dyn = ImplicitDynamics(planarpush, h, eval(r_pp_func), eval(rz_pp_func), eval(rθ_pp_func); 
-    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=1, nb=9, info=(GB ? GradientBundle(planarpush, N=50, ϵ=1.0e-4) : nothing)) 
+im_dyn = ImplicitDynamics(fixedplanarpush, h, eval(r_fpp_func), eval(rz_fpp_func), eval(rθ_fpp_func); 
+    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=1, nb=9, info=(GB ? GradientBundle(fixedplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
 
-nx = 2 * planarpush.nq
-nu = planarpush.nu 
+nx = 2 * fixedplanarpush.nq
+nu = fixedplanarpush.nu 
 
 # ## iLQR model
 ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w), 
@@ -35,21 +31,19 @@ print("len model ", length(model))
 # ## initial conditions and goal
 r_dim = 0.1
 if MODE == :translate 
-	q0 = [0.0, 0.0, 0.0, -r_dim - 1.0e-8, 0.0]
-	q1 = [0.0, 0.0, 0.0, -r_dim - 1.0e-8, 0.0]
+	q0 = [0.0, -r_dim - 1.0e-8, 0.0]
+	q1 = [0.0, -r_dim - 1.0e-8, 0.0]
 	x_goal = 1.0
 	y_goal = 0.0
 	θ_goal = 0.0 * π
-	qT = [x_goal, y_goal, θ_goal, x_goal - r_dim, y_goal - r_dim]
+	qT = [θ_goal,  - r_dim,  - r_dim]
 	xT = [qT; qT]
 elseif MODE == :rotate 
-	q0 = [0.0, 0.0, 0.0, -r_dim - 1.0e-8, 0.0]
-	q1 = [0.0, 0.0, 0.0, -r_dim - 1.0e-8, 0.0]
+	q0 = [0.0, -r_dim - 1.0e-8, 0.0]
+	q1 = [0.0, -r_dim - 1.0e-8, 0.0]
 	x1 = [q1; q1]
-	x_goal = 0.5
-	y_goal = 0.5
-	θ_goal = 1.5707963267949#0.5 * π
-	qT = [x_goal, y_goal, θ_goal, x_goal-r_dim, y_goal-r_dim]
+	θ_goal = 1.61#0.5 * π
+	qT = [θ_goal, -r_dim, -r_dim]
 	xT = [qT; qT]
 end
 
@@ -58,12 +52,12 @@ println("theta goal ", θ_goal)
 function objt(x, u, w)
 	J = 0.0 
 
-	q1 = x[1:planarpush.nq] 
-	q2 = x[planarpush.nq .+ (1:planarpush.nq)] 
+	q1 = x[1:fixedplanarpush.nq] 
+	q2 = x[fixedplanarpush.nq .+ (1:fixedplanarpush.nq)] 
 	v1 = (q2 - q1) ./ h
 
-	J += 0.5 * transpose(v1) * Diagonal([1.0, 1.0, 1.0, 0.1, 0.1]) * v1 
-	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 1.0, 1.0, 0.1, 0.1, 1.0, 1.0, 1.0, 0.1, 0.1]) * (x - xT) 
+	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1]) * v1 
+	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * (x - xT) 
 	J += 0.5 * (MODE == :translate ? 1.0e-1 : 1.0e-2) * transpose(u) * u
 
 	return J
@@ -72,12 +66,12 @@ end
 function objT(x, u, w)
 	J = 0.0 
 	
-	q1 = x[1:planarpush.nq] 
-	q2 = x[planarpush.nq .+ (1:planarpush.nq)] 
+	q1 = x[1:fixedplanarpush.nq] 
+	q2 = x[fixedplanarpush.nq .+ (1:fixedplanarpush.nq)] 
 	v1 = (q2 - q1) ./ h
 
-	J += 0.5 * transpose(v1) * Diagonal([1.0, 1.0, 1.0, 0.1, 0.1]) * v1 
-	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 1.0, 1.0, 0.1, 0.1, 1.0, 1.0, 1.0, 0.1, 0.1]) * (x - xT) 
+	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1]) * v1 
+	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * (x - xT) 
 
 	return J
 end
@@ -99,7 +93,7 @@ end
 
 function terminal_con(x, u, w) 
     [
-     (x - xT)[collect([(1:3)..., (6:8)...])]; # goal 
+     (x - xT)[collect([(1)..., (4)...])]; # goal 
     ]
 end
 
@@ -109,13 +103,13 @@ cons = [[cont for t = 1:T-1]..., conT];
 
 # ## rollout
 x1 = [q0; q1]
-ū = MODE == :translate ? [t < 5 ? [1.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [1.0; 0.0] : t < 10 ? [0.5; 0.0] : [0.0; 0.0] for t = 1:T-1]
+ū = MODE == :translate ? [t < 5 ? [0.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [0.0; -0.1] : t < 10 ? [2.5; 0.0] : [0.0; 0.0] for t = 1:T-1]
 x̄ = iLQR.rollout(model, x1, ū)
 # for i=1:T
 #     println(i, " : ", x̄[i])
 # end
 q̄ = state_to_configuration(x̄)
-visualize!(vis, planarpush, q̄, Δt=h);
+# visualize!(vis, fixedplanarpush, q̄, Δt=h);
 
 # ## solver
 solver = iLQR.solver(model, obj, cons, 
@@ -145,7 +139,19 @@ iLQR.reset!(solver.s_data)
 # ## solution
 x_sol, u_sol = iLQR.get_trajectory(solver)
 q_sol = state_to_configuration(x_sol)
-visualize!(vis, planarpush, q_sol, Δt=h);
+for i=1:T-1
+	println("u_sol :", u_sol[i])
+end
+
+for i=1:T
+	println("qsol :", q_sol[i])
+end
+
+# ## visualization 
+vis = Visualizer() 
+render(vis);
+
+visualize!(vis, fixedplanarpush, q_sol, Δt=h);
 
 # ## benchmark 
 # solver.options.verbose = false

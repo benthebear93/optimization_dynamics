@@ -39,7 +39,8 @@ The path-following solver and hopper model can be found in [RoboDojo.jl](https:/
 ```
 cd /path/to/OptimizationDynamics
 julia
-activate .
+]
+activate.
 instantiate
 build
 ```
