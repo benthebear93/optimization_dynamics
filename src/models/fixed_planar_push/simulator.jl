@@ -83,7 +83,7 @@ end
 #     return q + gamma + s_gamma + psi + b + spsi + sb
 # end
 
-num_var(model::FixedPlanarPush) = model.nq + 1 + 1 + 5 + 9 + 5 + 9
+RoboDojo.num_var(model::FixedPlanarPush) = model.nq + 1 + 1 + 5 + 9 + 5 + 9
 friction_coefficients(model::FixedPlanarPush{T}) where T = T[]  
 
 

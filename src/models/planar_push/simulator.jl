@@ -59,7 +59,7 @@ function RoboDojo.initialize_z!(z, model::PlanarPush, idx::IndicesZ, q)
     z[idx.sb] .= 0.1
 end
 
-num_var(model::PlanarPush) = model.nq + 2 * 1 + 2 * 14
+RoboDojo.num_var(model::PlanarPush) = model.nq + 2 * 1 + 2 * 14
 friction_coefficients(model::PlanarPush{T}) where T = T[]  
 
 

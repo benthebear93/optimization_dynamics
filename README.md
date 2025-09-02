@@ -48,4 +48,5 @@ build
 ```
 julia --project=.
 include("examples/planar_push.jl")
+include("examples/line_planar_push.jl")
 ```

@@ -33,8 +33,8 @@ nθ = 2 * lineplanarpush.nq + lineplanarpush.nu + lineplanarpush.nw + 1
 
 # Residual
 r_lpp = residual(lineplanarpush, z, θ, κ)
-rz_lpp = Symbolics.jacobian(r_pp, z)
-rθ_lpp = Symbolics.jacobian(r_pp, θ)
+rz_lpp = Symbolics.jacobian(r_lpp, z)
+rθ_lpp = Symbolics.jacobian(r_lpp, θ)
 
 # Build function
 r_lpp_func = build_function(r_lpp, z, θ, κ)[2]

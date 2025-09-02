@@ -89,7 +89,7 @@ include("../src/models/visualize.jl")
 export 
     acrobot_impact, acrobot_nominal,
     cartpole_friction, cartpole_frictionless, 
-    planarpush, fixedplanarpush, lineplanarpush
+    planarpush, fixedplanarpush, lineplanarpush,
     rocket, RocketInfo, f_rocket_proj, fx_rocket_proj, fu_rocket_proj, f_rocket, fx_rocket, fu_rocket
 
 export 

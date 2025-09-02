@@ -15,7 +15,7 @@ h = 0.1
 T = 26
 
 im_dyn = ImplicitDynamics(lineplanarpush, h, eval(r_lpp_func), eval(rz_lpp_func), eval(rθ_lpp_func); 
-    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=1, nb=9, info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
+    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=2, nb=10, info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
 
 nx = 2 * lineplanarpush.nq
 nu = lineplanarpush.nu 
@@ -39,10 +39,10 @@ if MODE == :translate
 	qT = [θ_goal,  - r_dim,  - r_dim]
 	xT = [qT; qT]
 elseif MODE == :rotate 
-	q0 = [0.0, -r_dim - 1.0e-8, 0.0, -r_dim - 1.0e-8, 0.0]
-	q1 = [0.0, -r_dim - 1.0e-8, 0.0, -r_dim - 1.0e-8, 0.0]
+	q0 = [0.0, -r_dim - 1.0e-8, 0.025, -r_dim - 1.0e-8, -0.025]
+	q1 = [0.0, -r_dim - 1.0e-8, 0.025, -r_dim - 1.0e-8, -0.025]
 	x1 = [q1; q1]
-	θ_goal = 0.5#0.5 * π
+	θ_goal = 0.5
 	qT = [θ_goal, -r_dim, -r_dim, -r_dim, -r_dim]
 	xT = [qT; qT]
 end
@@ -56,8 +56,8 @@ function objt(x, u, w)
 	q2 = x[lineplanarpush.nq .+ (1:lineplanarpush.nq)] 
 	v1 = (q2 - q1) ./ h
 
-	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * v1 
-	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * (x - xT) 
+	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1]) * v1 
+	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1]) * (x - xT) 
 	J += 0.5 * (MODE == :translate ? 1.0e-1 : 1.0e-2) * transpose(u) * u
 
 	return J
@@ -70,8 +70,8 @@ function objT(x, u, w)
 	q2 = x[lineplanarpush.nq .+ (1:lineplanarpush.nq)] 
 	v1 = (q2 - q1) ./ h
 
-	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * v1 
-	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * (x - xT) 
+	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1]) * v1 
+	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1]) * (x - xT) 
 
 	return J
 end
@@ -81,8 +81,8 @@ cT = iLQR.Cost(objT, nx, 0)
 obj = [[ct for t = 1:T-1]..., cT];
 
 # ## constraints
-ul = [-5.0; -5.0; -5.0; -5.0]
-uu = [5.0; 5.0; 5.0; 5.0]
+ul = [-10.0; -10.0; -10.0; -10.0]
+uu = [10.0; 10.0; 10.0; 10.0]
 
 function stage_con(x, u, w) 
     [
@@ -103,11 +103,14 @@ cons = [[cont for t = 1:T-1]..., conT];
 
 # ## rollout
 x1 = [q0; q1]
-ū = MODE == :translate ? [t < 5 ? [0.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [0.1; 0.0; 0.1; 0.0] : t < 10 ? [2.5; 0.0; 2.5; 0.0] : [0.0; 0.0; 0.0; 0.0] for t = 1:T-1]
+ū = MODE == :translate ? [t < 5 ? [0.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [0.1; 0.0; 0.1; 0.0] : t < 10 ? [1.0; 0.0; 2.5; 0.0] : [0.0; 0.0; 0.0; 0.0] for t = 1:T-1]
 x̄ = iLQR.rollout(model, x1, ū)
-# for i=1:T
-#     println(i, " : ", x̄[i])
-# end
+for i=1:T
+    println(i, " : ", x̄[i])
+end
+for i=1:T-1
+    println(i, " : ", ū[i])
+end
 q̄ = state_to_configuration(x̄)
 # visualize!(vis, lineplanarpush, q̄, Δt=h);
 

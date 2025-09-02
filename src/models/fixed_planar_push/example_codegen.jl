@@ -33,8 +33,8 @@ nθ = 2 * fixedplanarpush.nq + fixedplanarpush.nu + fixedplanarpush.nw + 1
 
 # Residual
 r_fpp = residual(fixedplanarpush, z, θ, κ)
-rz_fpp = Symbolics.jacobian(r_pp, z)
-rθ_fpp = Symbolics.jacobian(r_pp, θ)
+rz_fpp = Symbolics.jacobian(r_fpp, z)
+rθ_fpp = Symbolics.jacobian(r_fpp, θ)
 
 # Build function
 r_fpp_func = build_function(r_fpp, z, θ, κ)[2]
