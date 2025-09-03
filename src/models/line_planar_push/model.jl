@@ -38,7 +38,7 @@ cc4 = [-r_dim, -r_dim]
 contact_corner_offset = [cc1, cc2, cc3, cc4]
 
 # Parameters
-μ_surface = 0.001  # coefficient of friction
+μ_surface = 0.25  # coefficient of friction
 μ_pusher = 0.5
 gravity = 9.81
 mass_block = 1.0   # mass
@@ -111,7 +111,7 @@ function P_func(model::LinePlanarPush, q)
 	N2 = Symbolics.jacobian([ϕ[2]], q)  # 2x5 matrix
     N_pusher1 = N1[2:3]  # Correct: ∂ϕ[1]/∂z₂, ∂ϕ[1]/∂z₃
 	# @show N_pusher1
-    N_pusher2 = N2[2:3]  # Correct: ∂ϕ[2]/∂z₄, ∂ϕ[2]/∂z₅
+    N_pusher2 = N2[4:5]  # Correct: ∂ϕ[2]/∂z₄, ∂ϕ[2]/∂z₅
 	# @show N_pusher2
 
     norm1 = sqrt(N_pusher1[1]^2.0 + N_pusher1[2]^2.0)  # Add epsilon
@@ -131,11 +131,11 @@ function P_func(model::LinePlanarPush, q)
 	# @show norm2
 	# @show typeof(norm2)
 	# @show N_pusher2
-	if isapprox(Symbolics.value(norm2), 0.0, atol=1e-10)
-		n_dir2 = [0.0, 0.0]
-	else
-		n_dir2 = N_pusher2 ./ norm2
-	end
+	# if isapprox(Symbolics.value(norm2), 0.0, atol=1e-10)
+	# n_dir2 = [0.0, 0.0]
+	# else
+	n_dir2 = N_pusher2 ./ norm2
+	# end
 	# n_dir2 = N_pusher2 ./ norm2
 	# @show n_dir2
     t_dir2 = [-n_dir2[2]; n_dir2[1]]

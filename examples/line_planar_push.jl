@@ -15,7 +15,7 @@ h = 0.1
 T = 26
 
 im_dyn = ImplicitDynamics(lineplanarpush, h, eval(r_lpp_func), eval(rz_lpp_func), eval(rθ_lpp_func); 
-    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=2, nb=10, info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
+    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=2, nb=10, d=1, info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
 
 nx = 2 * lineplanarpush.nq
 nu = lineplanarpush.nu 
@@ -27,7 +27,6 @@ ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w),
 	nx, nx, nu) 
 
 model = [ilqr_dyn for t = 1:T-1];
-print("len model ", length(model))
 # ## initial conditions and goal
 r_dim = 0.1
 if MODE == :translate 
@@ -47,7 +46,6 @@ elseif MODE == :rotate
 	xT = [qT; qT]
 end
 
-println("theta goal ", θ_goal)
 # ## objective
 function objt(x, u, w)
 	J = 0.0 
@@ -72,7 +70,6 @@ function objT(x, u, w)
 
 	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1]) * v1 
 	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1]) * (x - xT) 
-
 	return J
 end
 
@@ -81,7 +78,7 @@ cT = iLQR.Cost(objT, nx, 0)
 obj = [[ct for t = 1:T-1]..., cT];
 
 # ## constraints
-ul = [-10.0; -10.0; -10.0; -10.0]
+ul = [0.0; -10.0; 0.0; -10.0]
 uu = [10.0; 10.0; 10.0; 10.0]
 
 function stage_con(x, u, w) 
@@ -103,7 +100,7 @@ cons = [[cont for t = 1:T-1]..., conT];
 
 # ## rollout
 x1 = [q0; q1]
-ū = MODE == :translate ? [t < 5 ? [0.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [0.1; 0.0; 0.1; 0.0] : t < 10 ? [1.0; 0.0; 2.5; 0.0] : [0.0; 0.0; 0.0; 0.0] for t = 1:T-1]
+ū = MODE == :translate ? [t < 5 ? [0.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [0.5; 0.0; 1.5; 0.0] : t < 10 ? [1.0; 0.0; 2.5; 0.0] : [0.1; 0.1; 0.1; 0.1] for t = 1:T-1]
 x̄ = iLQR.rollout(model, x1, ū)
 for i=1:T
     println(i, " : ", x̄[i])
@@ -129,7 +126,7 @@ solver = iLQR.solver(model, obj, cons,
 		verbose=false))
 iLQR.initialize_controls!(solver, ū)
 iLQR.initialize_states!(solver, x̄);
-
+solver.m_data.w = [[0] for t = 1:T]
 # ## solve
 iLQR.reset!(solver.s_data)
 @time iLQR.solve!(solver);
@@ -156,6 +153,19 @@ render(vis);
 
 visualize!(vis, lineplanarpush, q_sol, Δt=h);
 
-# ## benchmark 
-# solver.options.verbose = false
-# @benchmark iLQR.solve!($solver, x̄, ū) setup=(x̄=deepcopy(x̄), ū=deepcopy(ū));
+
+using CSV
+using DataFrames
+function save_to_csv(q_sol, u_sol, T, filename_q="data/qsol.csv", filename_u="data/usol.csv")
+    # q_sol 저장
+    nq = length(q_sol[1])  # 상태 벡터의 차원
+    q_data = DataFrame([getindex.(q_sol, i) for i in 1:nq], ["q_$i" for i in 1:nq])
+    CSV.write(filename_q, q_data)
+
+    # u_sol 저장
+    nu = length(u_sol[1])  # 제어 입력 벡터의 차원
+    u_data = DataFrame([getindex.(u_sol, i) for i in 1:nu], ["u_$i" for i in 1:nu])
+    CSV.write(filename_u, u_data)
+end
+
+save_to_csv(q_sol, u_sol, T)

@@ -50,3 +50,8 @@ julia --project=.
 include("examples/planar_push.jl")
 include("examples/line_planar_push.jl")
 ```
+## ram leak
+```
+ps -eo pid,tty,stat,%mem,etime,cmd | grep '[j]ulia'
+pkill -9 -u "$USER" -x julia
+```

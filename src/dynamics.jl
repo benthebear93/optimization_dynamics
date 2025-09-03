@@ -85,6 +85,11 @@ function f(d, model::ImplicitDynamics, x, u, w)
 	model.v1 .-= q1 
 	model.v1 ./= model.eval_sim.h
 
+	# Add disturbance to rotation (angular velocity)
+    if length(w) > 0
+        model.v1[1] += w[1]
+    end
+	
 	q3 = RoboDojo.step!(model.eval_sim, q2, model.v1, u, 1)
 
 	d[model.idx_q1] .= q2 
@@ -99,6 +104,10 @@ function fx(dx, model::ImplicitDynamics, x, u, w)
 	model.v1 .= q2 
 	model.v1 .-= q1 
 	model.v1 ./= model.grad_sim.h
+
+	if length(w) > 0
+        model.v1[1] += w[1]
+    end
 
 	RoboDojo.step!(model.grad_sim, q2, model.v1, u, 1)
 
@@ -119,6 +128,11 @@ function fu(du, model::ImplicitDynamics, x, u, w)
 	model.v1 .= q2 
 	model.v1 .-= q1 
 	model.v1 ./= model.grad_sim.h
+
+	# Add disturbance to rotation (angular velocity)
+    if length(w) > 0
+        model.v1[1] += w[1]
+    end
 
 	RoboDojo.step!(model.grad_sim, q2, model.v1, u, 1)
 

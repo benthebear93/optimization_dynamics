@@ -1,5 +1,7 @@
 module OptimizationDynamics
 
+using CSV
+using DataFrames
 using LinearAlgebra 
 using BenchmarkTools
 using Symbolics 
