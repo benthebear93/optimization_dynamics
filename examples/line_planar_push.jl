@@ -10,23 +10,25 @@ MODE = :rotate
 # ## gradient bundle
 GB = false 
 
-# ## state-space model
 h = 0.1
 T = 26
-
+num_w = 1
+# define implicit dynamics (eval_sim, grad_sim with interior point method)
 im_dyn = ImplicitDynamics(lineplanarpush, h, eval(r_lpp_func), eval(rz_lpp_func), eval(rθ_lpp_func); 
-    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=2, nb=10, d=1, info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
+    r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=2, nb=10, d=num_w, info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
 
 nx = 2 * lineplanarpush.nq
 nu = lineplanarpush.nu 
 
-# ## iLQR model
+# ## iLQR from IterativeLQR Pkg - loading user-provided dynamcis
 ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w), 
 	(dx, x, u, w) -> GB ? fx_gb(dx, im_dyn, x, u, w) : fx(dx, im_dyn, x, u, w), 
 	(du, x, u, w) -> GB ? fu_gb(du, im_dyn, x, u, w) : fu(du, im_dyn, x, u, w), 
-	nx, nx, nu) 
+	(gamma, x, u, w) -> f_debug(gamma, im_dyn, x, u, w),
+	nx, nx, nu, num_w) 
 
-model = [ilqr_dyn for t = 1:T-1];
+# generate ilqr dynamics for each trajectory index
+ilqr_dyns = [ilqr_dyn for t = 1:T-1];
 # ## initial conditions and goal
 r_dim = 0.1
 if MODE == :translate 
@@ -101,71 +103,96 @@ cons = [[cont for t = 1:T-1]..., conT];
 # ## rollout
 x1 = [q0; q1]
 ū = MODE == :translate ? [t < 5 ? [0.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [0.5; 0.0; 1.5; 0.0] : t < 10 ? [1.0; 0.0; 2.5; 0.0] : [0.1; 0.1; 0.1; 0.1] for t = 1:T-1]
-x̄ = iLQR.rollout(model, x1, ū)
+
+w = [[(0.005+ 0.01 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
+# rollout with list of ilqr dynamics model and initial state, control input with disturbance
+x̄, gamma_hist = iLQR.rollout(ilqr_dyns, x1, ū, w)
+
 for i=1:T
     println(i, " : ", x̄[i])
 end
-for i=1:T-1
-    println(i, " : ", ū[i])
-end
-q̄ = state_to_configuration(x̄)
-# visualize!(vis, lineplanarpush, q̄, Δt=h);
-
-# ## solver
-solver = iLQR.solver(model, obj, cons, 
-	opts=iLQR.Options(
-		linesearch = :armijo,
-		α_min=1.0e-5,
-		obj_tol=1.0e-3,
-		grad_tol=1.0e-3,
-		max_iter=10,
-		max_al_iter=10,
-		con_tol=0.005,
-		ρ_init=1.0, 
-		ρ_scale=10.0, 
-		verbose=false))
-iLQR.initialize_controls!(solver, ū)
-iLQR.initialize_states!(solver, x̄);
-solver.m_data.w = [[0] for t = 1:T]
-# ## solve
-iLQR.reset!(solver.s_data)
-@time iLQR.solve!(solver);
-
-@show iLQR.eval_obj(solver.m_data.obj.costs, solver.m_data.x, solver.m_data.u, solver.m_data.w)
-@show solver.s_data.iter[1]
-@show norm(terminal_con(solver.m_data.x[T], zeros(0), zeros(0)), Inf)
-@show solver.s_data.obj[1] # augmented Lagrangian cost
-		
-# ## solution
-x_sol, u_sol = iLQR.get_trajectory(solver)
-q_sol = state_to_configuration(x_sol)
-for i=1:T-1
-	println("u_sol :", u_sol[i])
-end
-
 for i=1:T
-	println("qsol :", q_sol[i])
+    println(i, " : ", gamma_hist[i])
 end
+# for i=1:T-1
+#     println(i, " : ", ū[i])
+# end
+# # ## visualization 
+# q̄ = state_to_configuration(x̄)
+# # visualize!(vis, lineplanarpush, q̄, Δt=h);
+# # ## solver
+# solver = iLQR.solver(ilqr_dyns, obj, cons, 
+# 	opts=iLQR.Options(
+# 		linesearch = :armijo,
+# 		α_min=1.0e-5,
+# 		obj_tol=1.0e-3,
+# 		grad_tol=1.0e-3,
+# 		max_iter=10,
+# 		max_al_iter=10,
+# 		con_tol=0.005,
+# 		ρ_init=1.0, 
+# 		ρ_scale=10.0, 
+# 		verbose=false))
+# iLQR.initialize_controls!(solver, ū)
+# iLQR.initialize_states!(solver, x̄);
 
-# ## visualization 
-vis = Visualizer() 
-render(vis);
+# # disturbance
+# solver.m_data.w = w
+# iLQR.reset!(solver.s_data)
+# @time iLQR.solve!(solver)
+# x_sol, u_sol = iLQR.get_trajectory(solver)
+# q_sol = state_to_configuration(x_sol)
 
-visualize!(vis, lineplanarpush, q_sol, Δt=h);
+# @show iLQR.eval_obj(solver.m_data.obj.costs, solver.m_data.x, solver.m_data.u, solver.m_data.w)
+# @show solver.s_data.iter[1]
+# @show norm(terminal_con(solver.m_data.x[T], zeros(0), zeros(0)), Inf)
+# @show solver.s_data.obj[1] # augmented Lagrangian cost
+
+# # # Compare
+# # for i = 1:T
+# #     println("Nominal q[$i]: ", q_nom[i][1:5], " | Disturbed q[$i]: ", q_dist[i][1:5])
+# # end
+
+# # θ_nom = [q_nom[i][1] for i in 1:T]
+# θ_sol = [q_sol[i][1] for i in 1:T]
+# h = 0.1
+# time = collect(0:h:(T-1)*h)
+# using Plots
+# plot(time, θ_sol, label="Disturbed θ", linewidth=2, color=:red)
+# title!("object θ with disturbance")
+# # title!("object θ without disturbance")
+# xlabel!("Time (s)")
+# ylabel!("Rotation (rad)")
+# savefig("theta_comparison.png")
+
+# # # ## solution
+# # for i=1:T-1
+# # 	println("u_sol :", u_sol[i])
+# # end
+
+# # for i=1:T
+# # 	println("qsol :", q_sol[i])
+# # end
+
+# # # ## visualization 
+# vis = Visualizer() 
+# render(vis);
+# visualize!(vis, lineplanarpush, q_sol, Δt=h);
 
 
-using CSV
-using DataFrames
-function save_to_csv(q_sol, u_sol, T, filename_q="data/qsol.csv", filename_u="data/usol.csv")
-    # q_sol 저장
-    nq = length(q_sol[1])  # 상태 벡터의 차원
-    q_data = DataFrame([getindex.(q_sol, i) for i in 1:nq], ["q_$i" for i in 1:nq])
-    CSV.write(filename_q, q_data)
+# using CSV
+# using DataFrames
+# function save_to_csv(q_sol, u_sol, T, filename_q="data/qdist_without.csv", filename_u="data/udist_without.csv")
+#     # q_sol 저장
+#     nq = length(q_sol[1]) 
+#     q_data = DataFrame([getindex.(q_sol, i) for i in 1:nq], ["q_$i" for i in 1:nq])
+#     CSV.write(filename_q, q_data)
 
-    # u_sol 저장
-    nu = length(u_sol[1])  # 제어 입력 벡터의 차원
-    u_data = DataFrame([getindex.(u_sol, i) for i in 1:nu], ["u_$i" for i in 1:nu])
-    CSV.write(filename_u, u_data)
-end
+#     # u_sol 저장
+#     nu = length(u_sol[1])
+#     u_data = DataFrame([getindex.(u_sol, i) for i in 1:nu], ["u_$i" for i in 1:nu])
+#     CSV.write(filename_u, u_data)
+# end
 
-save_to_csv(q_sol, u_sol, T)
+# # save_to_csv(q_nom, u_nom, T)
+# save_to_csv(q_sol, u_sol, T)

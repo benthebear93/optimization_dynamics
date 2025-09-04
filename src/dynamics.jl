@@ -16,6 +16,7 @@ end
 function get_simulator(model, h, r_func, rz_func, rθ_func; 
 	T=1, r_tol=1.0e-8, κ_eval_tol=1.0e-4, nc=model.nc, nb=model.nc, diff_sol=true)
 
+	# simulation from RoboDojo Pkg
 	sim = Simulator(model, T; 
         h=h, 
         residual=r_func, 
@@ -30,7 +31,8 @@ function get_simulator(model, h, r_func, rz_func, rθ_func;
             max_ls=25,
             ϵ_min=0.25,
             diff_sol=diff_sol,
-            verbose=false))  
+            verbose=false)
+		)  
 
     # set trajectory sizes
 	sim.traj.γ .= [zeros(nc) for t = 1:T] 
@@ -58,6 +60,7 @@ function ImplicitDynamics(model, h, r_func, rz_func, rθ_func;
 	no_impact && (nc = 0) 
 	no_friction && (nb = 0) 
 
+	# make evaluation and grad sim
 	eval_sim = get_simulator(model, h, r_func, rz_func, rθ_func; 
 			T=T, r_tol=r_tol, κ_eval_tol=κ_eval_tol, nc=nc, nb=nb, diff_sol=false)
 
@@ -84,18 +87,25 @@ function f(d, model::ImplicitDynamics, x, u, w)
 	model.v1 .= q2 
 	model.v1 .-= q1 
 	model.v1 ./= model.eval_sim.h
-
 	# Add disturbance to rotation (angular velocity)
-    if length(w) > 0
-        model.v1[1] += w[1]
+	if length(w) > 0
+        model.eval_sim.traj.w[1] = w  # Set w for step! (w is a vector, e.g., [w1])
     end
-	
 	q3 = RoboDojo.step!(model.eval_sim, q2, model.v1, u, 1)
-
+	# gamma = model.eval_sim.traj.γ
+	# model.gamma_traj[1] = gamma  # Store gamma (shift index in rollout if needed)
+    # @show gamma  # Keep for debugging
 	d[model.idx_q1] .= q2 
 	d[model.idx_q2] .= q3
 
 	return d
+end
+
+function f_debug(gamma, model::ImplicitDynamics, x, u, w)
+	γ = model.eval_sim.traj.γ
+	gamma[1] = γ[1][1]
+
+	return gamma
 end
 
 function fx(dx, model::ImplicitDynamics, x, u, w)
@@ -106,7 +116,7 @@ function fx(dx, model::ImplicitDynamics, x, u, w)
 	model.v1 ./= model.grad_sim.h
 
 	if length(w) > 0
-        model.v1[1] += w[1]
+        model.eval_sim.traj.w[1] = w  # Set w for step! (w is a vector, e.g., [w1])
     end
 
 	RoboDojo.step!(model.grad_sim, q2, model.v1, u, 1)
@@ -130,8 +140,8 @@ function fu(du, model::ImplicitDynamics, x, u, w)
 	model.v1 ./= model.grad_sim.h
 
 	# Add disturbance to rotation (angular velocity)
-    if length(w) > 0
-        model.v1[1] += w[1]
+	if length(w) > 0
+        model.eval_sim.traj.w[1] = w  # Set w for step! (w is a vector, e.g., [w1])
     end
 
 	RoboDojo.step!(model.grad_sim, q2, model.v1, u, 1)

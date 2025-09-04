@@ -69,6 +69,20 @@ function RoboDojo.initialize_z!(z, model::FixedPlanarPush, idx::IndicesZ, q)
     z[idx.sb] .= 0.1
 end
 
+function RoboDojo.indices_θ(model::FixedPlanarPush; nf=0) 
+    nq = model.nq 
+    nu = model.nu 
+    nw = model.nw 
+
+    q1 = collect(1:nq)
+    q2 = collect(nq .+ (1:nq))
+    u = collect(2nq .+ (1:nu))
+    w = collect(2nq + nu .+ (1:nw))
+    f = collect(2nq + nu + nw .+ (1:nf))
+    h = collect(2nq + nu + nw + nf .+ (1:1))
+
+    Indicesθ(q1, q2, u, w, f, h) 
+end
 # function num_var(model)
 #     # nq = model.nq
 #     # nc = model.nc

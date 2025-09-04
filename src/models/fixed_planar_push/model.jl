@@ -39,7 +39,7 @@ cc4 = [-r_dim, -r_dim]
 contact_corner_offset = [cc1, cc2, cc3, cc4]
 
 # Parameters
-μ_surface = 0.5  # coefficient of friction
+μ_surface = 0.25  # coefficient of friction
 μ_pusher = 0.5
 gravity = 9.81
 mass_block = 1.0   # mass
@@ -118,12 +118,14 @@ end
 function residual(model, z, θ, κ)
     nq = model.nq
     nu = model.nu
+	nw = model.nw
     nc_impact = 1
 
     q0 = θ[1:nq]
     q1 = θ[nq .+ (1:nq)]
     u1 = θ[2nq .+ (1:nu)]
-    h = θ[2nq + nu .+ (1:1)]
+	w1 = θ[2nq + nu .+ (1:nw)]
+    h = θ[2nq + nu + nw .+ (1:1)]
 
     q2 = z[1:nq]
     γ1 = z[nq .+ (1:nc_impact)]
@@ -149,10 +151,17 @@ function residual(model, z, θ, κ)
 	D1L1, D2L1 = lagrangian_derivatives(a -> M_func(model, a), (a, b) -> C_func(model, a, b), qm1, vm1)
 	D1L2, D2L2 = lagrangian_derivatives(a -> M_func(model, a), (a, b) -> C_func(model, a, b), qm2, vm2)
 
+	if nw >0
+		w = [w1; 0; 0]
+	else
+		w = [0; 0; 0]
+	end
+
     d = (0.5 * h[1] * D1L1 + D2L1 + 0.5 * h[1] * D1L2 - D2L2#
             + B_func(model, qm2) * u1
             + N * γ1[1]
-            + transpose(P) * b1)
+            + transpose(P) * b1
+			+ w)
 
     [
 	 d;
@@ -187,8 +196,9 @@ nc = 5 # number of contact points
 nc_impact = 1
 nf = 3 # number of faces for friction cone pyramid
 nb = 9 #(nc - nc_impact) * nf + (nf - 1) * nc_impact
+nw = 1
 
-fixedplanarpush = FixedPlanarPush(nq, nu, 0, nc,
+fixedplanarpush = FixedPlanarPush(nq, nu, nw, nc,
 			mass_block, mass_pusher, 
 			inertia, [μ_surface for i = 1:nc], μ_pusher, gravity,
 			contact_corner_offset)
