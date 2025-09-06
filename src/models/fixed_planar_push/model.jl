@@ -39,7 +39,7 @@ cc4 = [-r_dim, -r_dim]
 contact_corner_offset = [cc1, cc2, cc3, cc4]
 
 # Parameters
-μ_surface = 0.25  # coefficient of friction
+μ_surface = 1.0  # coefficient of friction
 μ_pusher = 0.5
 gravity = 9.81
 mass_block = 1.0   # mass
@@ -138,8 +138,7 @@ function residual(model, z, θ, κ)
 
 	ϕ = ϕ_func(model, q2)
 	N = vec(Symbolics.jacobian(ϕ, q2))
-
-	# λ1 = [b1; γ1]
+	
 	P = P_func(model, q2)
     vT = P * (q2 - q1) ./ h[1]
 

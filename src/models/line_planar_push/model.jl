@@ -38,15 +38,15 @@ cc4 = [-r_dim, -r_dim]
 contact_corner_offset = [cc1, cc2, cc3, cc4]
 
 # Parameters
-μ_surface = 0.25  # coefficient of friction
+μ_surface = 1.0  # coefficient of friction
 μ_pusher = 0.5
 gravity = 9.81
 mass_block = 1.0   # mass
 mass_pusher = 10.0
 inertia = 1.0 / 12.0 * mass_block * ((2.0 * r_dim)^2 + (2.0 * r_dim)^2)
 L = 0.05
-k_spring = 500
-c_damping = 30
+k_spring = 300
+c_damping = 50
 # rnd = 0.01
 # dim = [r_dim, r_dim]
 # dim_rnd = [r_dim - rnd, r_dim - rnd]

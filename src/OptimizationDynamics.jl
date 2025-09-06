@@ -36,6 +36,8 @@ export
     ImplicitDynamics, f, fx, fu, state_to_configuration,
     f_gb, fx_gb, fu_gb, f_debug
 
+export 
+    ϕ_func
 # # acrobot 
 # include("../src/models/acrobot/model.jl")
 # include("../src/models/acrobot/simulator_impact.jl") 
@@ -69,6 +71,7 @@ include("../src/models/fixed_planar_push/model.jl")
 include("../src/models/fixed_planar_push/simulator.jl")
 include("../src/models/fixed_planar_push/visuals.jl")
 path_fixed_planarpush = @get_scratch!("fixedplanarpush")
+@show path_fixed_planarpush
 @load joinpath(path_fixed_planarpush, "residual.jld2") r_fpp_func rz_fpp_func rθ_fpp_func rz_fpp_array rθ_fpp_array
 
 # line planar push 

@@ -43,7 +43,7 @@ elseif MODE == :rotate
 	q0 = [0.0, -r_dim - 1.0e-8, 0.0]
 	q1 = [0.0, -r_dim - 1.0e-8, 0.0]
 	x1 = [q1; q1]
-	θ_goal = 0.5
+	θ_goal = 0.175*3
 	qT = [θ_goal, -r_dim, -r_dim]
 	xT = [qT; qT]
 end
@@ -60,6 +60,8 @@ function objt(x, u, w)
 	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1]) * v1 
 	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * (x - xT) 
 	J += 0.5 * (MODE == :translate ? 1.0e-1 : 1.0e-2) * transpose(u) * u
+	ϕ = ϕ_func(fixedplanarpush, q2)[1]  # SDF 값 (접촉 시 0)
+	J += 0.5 * (ϕ+1e-8)^2
 
 	return J
 end
@@ -72,7 +74,9 @@ function objT(x, u, w)
 	v1 = (q2 - q1) ./ h
 
 	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1]) * v1 
-	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * (x - xT) 
+	J += 0.5 * transpose(x - xT) * Diagonal([0.0, 1.0, 1.0, 0, 0.1, 0.1]) * (x - xT) 
+	ϕ = ϕ_func(fixedplanarpush, q2)[1]  # SDF 값 (접촉 시 0)
+	J += 0.5 * (ϕ+1e-8)^2
 
 	return J
 end
@@ -82,7 +86,7 @@ cT = iLQR.Cost(objT, nx, 0)
 obj = [[ct for t = 1:T-1]..., cT];
 
 # ## constraints
-ul = [0.0; -10.0]
+ul = [-10.0; -10.0]
 uu = [10.0; 10.0]
 
 function stage_con(x, u, w) 
@@ -104,7 +108,7 @@ cons = [[cont for t = 1:T-1]..., conT];
 
 # ## rollout
 x1 = [q0; q1]
-ū = MODE == :translate ? [t < 5 ? [0.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [0.5; -0.1] : t < 10 ? [2.5; 0.0] : [0.0; 0.0] for t = 1:T-1]
+ū = [t < 5 ? [2.5; 0.0] : t < 10 ? [2.5; 0.0] : t < 20 ? [0.1; 0.0] : [0.1; 0.1] for t = 1:T-1]
 
 w = [[(0.000+ 0.00 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
 x̄, gamma_hist = iLQR.rollout(model, x1, ū, w)
@@ -125,7 +129,7 @@ solver = iLQR.solver(model, obj, cons,
 		obj_tol=1.0e-3,
 		grad_tol=1.0e-3,
 		max_iter=10,
-		max_al_iter=10,
+		max_al_iter=20,
 		con_tol=0.005,
 		ρ_init=1.0, 
 		ρ_scale=10.0, 
@@ -149,9 +153,19 @@ x_sol, u_sol = iLQR.get_trajectory(solver)
 gamma_sol = iLQR.get_contact_force(solver)
 q_sol = state_to_configuration(x_sol)
 
-θ_sol = [q_sol[i][1] for i in 1:T]
-h = 0.1
-time = collect(0:h:(T-1)*h)
+Random.seed!(1234) # 원하는 시드 값(예: 1234)을 설정
+uw = [[(0.005+ 0.05 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
+# for i=1:T-1
+# 	u_sol[i][1] = u_sol[i][1] + uw[i][1]
+# 	u_sol[i][2] = u_sol[i][2] + uw[i][1]
+# end
+
+x_dist, gamma_hist_dist = iLQR.rollout(model, x1, u_sol, uw)
+q_dist = state_to_configuration(x_dist)
+
+# θ_sol = [q_sol[i][1] for i in 1:T]
+# h = 0.1
+# time = collect(0:h:(T-1)*h)
 
 # using Plots
 # plot(time, θ_sol, label="dist_θ", linewidth=2, color=:red)
@@ -172,6 +186,11 @@ end
 
 for i=1:T
 	println("qsol :", q_sol[i])
+	println("qdist :", q_dist[i])
+end
+
+for i=1:T-1
+	println("disturbance :", uw[i])
 end
 
 # # ## visualization 
@@ -179,6 +198,11 @@ vis = Visualizer()
 render(vis);
 
 visualize!(vis, fixedplanarpush, q_sol, Δt=h);
+
+vis2 = Visualizer() 
+render(vis2);
+
+visualize!(vis2, fixedplanarpush, q_dist, Δt=h);
 
 # using CSV
 # using DataFrames
