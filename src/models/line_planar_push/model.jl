@@ -8,6 +8,7 @@ struct LinePlanarPush{T} <: Model{T}
 	nu::Int # controls
 	nw::Int # parameters
 	nc::Int # contact points
+	nc_impact::Int
 
     mass_block::T
 	mass_pusher::T
@@ -105,54 +106,28 @@ function P_func(model::LinePlanarPush, q)
     p_pusher2 = q[4:5]
 
     ϕ = ϕ_func(model, q)
-	# @show ϕ[1]
-	# @show ϕ[2] 
 	N1 = Symbolics.jacobian([ϕ[1]], q)  # 2x5 matrix
 	N2 = Symbolics.jacobian([ϕ[2]], q)  # 2x5 matrix
     N_pusher1 = N1[2:3]  # Correct: ∂ϕ[1]/∂z₂, ∂ϕ[1]/∂z₃
-	# @show N_pusher1
     N_pusher2 = N2[4:5]  # Correct: ∂ϕ[2]/∂z₄, ∂ϕ[2]/∂z₅
-	# @show N_pusher2
 
     norm1 = sqrt(N_pusher1[1]^2.0 + N_pusher1[2]^2.0)  # Add epsilon
-	# n_dir1 = N_pusher1 ./ norm1
-	# if isapprox(Symbolics.value(norm1), 0.0, atol=1e-10)
-	# 	n_dir1 = [0.0, 0.0]
-	# else
-	# 	n_dir1 = N_pusher1 ./ norm1
-	# end
 	n_dir1 = N_pusher1 ./ norm1
     t_dir1 = [-n_dir1[2]; n_dir1[1]]
 
-	# @show norm1
-	# @show typeof(norm1)
-	# @show N_pusher2
     norm2 = sqrt(N_pusher2[1]^2.0 + N_pusher2[2]^2.0)  # Add epsilon
-	# @show norm2
-	# @show typeof(norm2)
-	# @show N_pusher2
-	# if isapprox(Symbolics.value(norm2), 0.0, atol=1e-10)
-	# n_dir2 = [0.0, 0.0]
-	# else
+
 	n_dir2 = N_pusher2 ./ norm2
-	# end
-	# n_dir2 = N_pusher2 ./ norm2
-	# @show n_dir2
     t_dir2 = [-n_dir2[2]; n_dir2[1]]
-	# @show t_dir2
     r1 = p_pusher1 - p_block[1:2]
     m1 = r1[1] * t_dir1[2] - r1[2] * t_dir1[1]
 
     r2 = p_pusher2 - p_block[1:2]
-	# @show r2
     m2 = r2[1] * t_dir2[2] - r2[2] * t_dir2[1]
 
     P1 = [m1; -t_dir1[1]; -t_dir1[2]; 0; 0]
     P2 = [m2; 0; 0; -t_dir2[1]; -t_dir2[2]]
 
-	# @show P_block
-	# @show transpose(P1)
-	# @show transpose(P2)
     return [P_block; transpose(P1); transpose(P2)]
 end
 
@@ -200,15 +175,7 @@ function residual(model, z, θ, κ)
 
 	ϕ = ϕ_func(model, q2)
 	N = Symbolics.jacobian(ϕ, q2)
-	# @show ϕ
-	# @show N
-	# @show size(N)
-	# @show γ1
-	# @show size(γ1)
-	# N2 = vec(Symbolics.jacobian(ϕ, q2))
-	# N = hcat(N1, N2)  # Creates a 5x2 matrix
 
-	# λ1 = [b1; γ1]
 	P = P_func(model, q2)
     vT = P * (q2 - q1) ./ h[1]
 
@@ -220,17 +187,7 @@ function residual(model, z, θ, κ)
 	D1L1, D2L1 = lagrangian_derivatives(a -> M_func(model, a), (a, b) -> C_func(model, a, b), qm1, vm1)
 	D1L2, D2L2 = lagrangian_derivatives(a -> M_func(model, a), (a, b) -> C_func(model, a, b), qm2, vm2)
 	f_spring_damper = spring_damper_force(qm2, vm2)
-	# @show f_spring_damper
-	# @show h[1]
-	# @show 0.5 * h[1] * D1L1 + D2L1 + 0.5 * h[1] * D1L2 - D2L2
-	# @show B_func(model, qm2)
-	# @show u1
-	# @show transpose(N)
-	# @show γ1
-	# @show transpose(P)
-	# @show b1
-	
-	# @show asfasf
+
 	if nw >0
 		w = [w1; 0; 0; 0; 0]
 	else
@@ -241,15 +198,7 @@ function residual(model, z, θ, κ)
             + transpose(N) * γ1
             + transpose(P) * b1
 			+ f_spring_damper + w)
-	# @show N
-	# @show γ1
-	# @show transpose(N) * γ1
-	# @show P
-	# @show b1
-	# @show transpose(P) * b1
 
-	# @show γ1[1] .* s1[1] - κ[1]
-	# @show afadfa
     [
 	 d;
     
@@ -293,7 +242,7 @@ nf = 3 # number of faces for friction cone pyramid
 nb = 10 #(nc - nc_impact) * nf + (nf - 1) * nc_impact
 nw = 1 # disturbance
 
-lineplanarpush = LinePlanarPush(nq, nu, nw, nc,
+lineplanarpush = LinePlanarPush(nq, nu, nw, nc, nc_impact,
 			mass_block, mass_pusher, 
 			inertia, [μ_surface for i = 1:nc], μ_pusher, gravity,
 			contact_corner_offset)

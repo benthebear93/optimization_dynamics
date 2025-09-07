@@ -2,6 +2,7 @@ struct ImplicitDynamics{T,R,RZ,Rθ,M<:RoboDojo.Model{T},P<:RoboDojo.Policy{T},D<
     n::Int
     m::Int
     d::Int
+	nc_impact::Int
 	eval_sim::Simulator{T,R,RZ,Rθ,M,P,D}
 	grad_sim::Simulator{T,R,RZ,Rθ,M,P,D}
 	q1::Vector{T} 
@@ -53,7 +54,7 @@ end
 function ImplicitDynamics(model, h, r_func, rz_func, rθ_func; 
 	T=1, r_tol=1.0e-8, κ_eval_tol=1.0e-6, κ_grad_tol=1.0e-6, 
 	no_impact=false, no_friction=false, 
-	n=(2 * model.nq), m=model.nu, d=model.nw, nc=model.nc, nb=model.nc,
+	n=(2 * model.nq), m=model.nu, d=model.nw, nc=model.nc, nb=model.nc, nc_impact=model.nc_impact,
 	info=nothing) 
 
 	# set trajectory sizes
@@ -75,7 +76,7 @@ function ImplicitDynamics(model, h, r_func, rz_func, rθ_func;
 	idx_q2 = collect(model.nq .+ (1:model.nq)) 
 	idx_u1 = collect(1:model.nu)
 	
-	ImplicitDynamics(n, m, d, 
+	ImplicitDynamics(n, m, d, nc_impact,
 		eval_sim, grad_sim, 
 		q1, q2, v1,
 		idx_q1, idx_q2, idx_u1, info)
@@ -103,7 +104,9 @@ end
 
 function f_debug(gamma, model::ImplicitDynamics, x, u, w)
 	γ = model.eval_sim.traj.γ
-	gamma[1] = γ[1][1]
+	for i=1:model.nc_impact
+		gamma[i] = γ[1][i]
+	end
 
 	return gamma
 end

@@ -13,6 +13,7 @@ GB = false
 h = 0.1
 T = 26
 num_w = 1
+nc_impact = 2
 # define implicit dynamics (eval_sim, grad_sim with interior point method)
 im_dyn = ImplicitDynamics(lineplanarpush, h, eval(r_lpp_func), eval(rz_lpp_func), eval(rθ_lpp_func); 
     r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=2, nb=10, d=num_w, info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing)) 
@@ -25,7 +26,7 @@ ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w),
 	(dx, x, u, w) -> GB ? fx_gb(dx, im_dyn, x, u, w) : fx(dx, im_dyn, x, u, w), 
 	(du, x, u, w) -> GB ? fu_gb(du, im_dyn, x, u, w) : fu(du, im_dyn, x, u, w), 
 	(gamma, x, u, w) -> f_debug(gamma, im_dyn, x, u, w),
-	nx, nx, nu, num_w) 
+	nx, nx, nu, num_w, nc_impact) 
 
 # generate ilqr dynamics for each trajectory index
 ilqr_dyns = [ilqr_dyn for t = 1:T-1];
@@ -60,9 +61,9 @@ function objt(x, u, w)
 	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1]) * (x - xT) 
 	J += 0.5 * (MODE == :translate ? 1.0e-1 : 1.0e-2) * transpose(u) * u
 	ϕ = ϕ_func(lineplanarpush, q2)[1]  # SDF 값 (접촉 시 0)
-	J += 0.5 * (ϕ+1e-8)^2
+	J += 0.5 * (ϕ)^2
 	ϕ = ϕ_func(lineplanarpush, q2)[2]  # SDF 값 (접촉 시 0)
-	J += 0.5 * (ϕ+1e-8)^2
+	J += 0.5 * (ϕ)^2
 
 	return J
 end
@@ -77,9 +78,9 @@ function objT(x, u, w)
 	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1]) * v1 
 	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1]) * (x - xT) 
 	ϕ = ϕ_func(lineplanarpush, q2)[1]  # SDF 값 (접촉 시 0)
-	J += 0.5 * (ϕ+1e-8)^2
+	J += 0.5 * (ϕ)^2
 	ϕ = ϕ_func(lineplanarpush, q2)[2]  # SDF 값 (접촉 시 0)
-	J += 0.5 * (ϕ+1e-8)^2
+	J += 0.5 * (ϕ)^2
 
 	return J
 end
@@ -117,19 +118,11 @@ w = [[(0.000+ 0.00 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseli
 # rollout with list of ilqr dynamics model and initial state, control input with disturbance
 x̄, gamma_hist = iLQR.rollout(ilqr_dyns, x1, ū, w)
 
-for i=1:T
-    println(i, " : ", x̄[i])
-end
-for i=1:T-1
-    println(i, " : ", gamma_hist[i])
-end
-for i=1:T-1
-    println(i, " : ", ū[i])
-end
-# ## visualization 
+
 q̄ = state_to_configuration(x̄)
 # visualize!(vis, lineplanarpush, q̄, Δt=h);
 # ## solver
+
 solver = iLQR.solver(ilqr_dyns, obj, cons, 
 	opts=iLQR.Options(
 		linesearch = :armijo,
@@ -157,26 +150,14 @@ iLQR.reset!(solver.s_data)
 
 # ## solution
 x_sol, u_sol = iLQR.get_trajectory(solver)
-gamma_sol = iLQR.get_contact_force(solver)
 q_sol = state_to_configuration(x_sol)
 
 using Random
+Random.seed!(1234)
+uw = [[(0.000+ 0.00 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
 
-# 시드 고정
-Random.seed!(1234) # 원하는 시드 값(예: 1234)을 설정
-uw = [[(0.005+ 0.05 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
-# for i=1:T-1
-# 	u_sol[i][1] = u_sol[i][1] + uw[i][1]
-# 	u_sol[i][2] = u_sol[i][2] + uw[i][1]
-# 	u_sol[i][3] = u_sol[i][3] + uw[i][1]
-# 	u_sol[i][4] = u_sol[i][4] + uw[i][1]
-# end
 x_dist, gamma_hist_dist = iLQR.rollout(ilqr_dyns, x1, u_sol, uw)
 q_dist = state_to_configuration(x_dist)
-# # Compare
-# for i = 1:T
-#     println("Nominal q[$i]: ", q_nom[i][1:5], " | Disturbed q[$i]: ", q_dist[i][1:5])
-# end
 
 # # θ_nom = [q_nom[i][1] for i in 1:T]
 # θ_sol = [q_sol[i][1] for i in 1:T]
@@ -196,11 +177,10 @@ for i=1:T-1
 end
 
 for i=1:T-1
-	println("gamma_sol :", gamma_sol[i])
+	println("gamma_hist_dist :", gamma_hist_dist[i])
 end
 
 for i=1:T
-	println("qsol :", q_sol[i])
 	println("q_dist :", q_dist[i])
 end
 
@@ -208,7 +188,7 @@ for i=1:T-1
 	println("disturbance :", uw[i])
 end
 
-# # ## visualization 
+# ## visualization 
 vis = Visualizer() 
 render(vis);
 visualize!(vis, lineplanarpush, q_sol, Δt=h);

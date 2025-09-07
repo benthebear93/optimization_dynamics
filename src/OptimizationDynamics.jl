@@ -59,12 +59,12 @@ export
 
 # # hopper from RoboDojo.jl 
 
-# # planar push 
-# include("../src/models/planar_push/model.jl")
-# include("../src/models/planar_push/simulator.jl")
-# include("../src/models/planar_push/visuals.jl")
-# path_planarpush = @get_scratch!("planarpush")
-# @load joinpath(path_planarpush, "residual.jld2") r_pp_func rz_pp_func rθ_pp_func rz_pp_array rθ_pp_array
+# planar push 
+include("../src/models/planar_push/model.jl")
+include("../src/models/planar_push/simulator.jl")
+include("../src/models/planar_push/visuals.jl")
+path_planarpush = @get_scratch!("planarpush")
+@load joinpath(path_planarpush, "residual.jld2") r_pp_func rz_pp_func rθ_pp_func rz_pp_array rθ_pp_array
 
 # fixed planar push 
 include("../src/models/fixed_planar_push/model.jl")

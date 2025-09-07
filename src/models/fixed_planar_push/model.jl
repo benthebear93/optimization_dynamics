@@ -8,6 +8,7 @@ struct FixedPlanarPush{T} <: Model{T}
 	nu::Int # controls
 	nw::Int # parameters
 	nc::Int # contact points
+	nc_impact::Int
 
     mass_block::T
 	mass_pusher::T
@@ -197,7 +198,7 @@ nf = 3 # number of faces for friction cone pyramid
 nb = 9 #(nc - nc_impact) * nf + (nf - 1) * nc_impact
 nw = 1
 
-fixedplanarpush = FixedPlanarPush(nq, nu, nw, nc,
+fixedplanarpush = FixedPlanarPush(nq, nu, nw, nc, nc_impact,
 			mass_block, mass_pusher, 
 			inertia, [μ_surface for i = 1:nc], μ_pusher, gravity,
 			contact_corner_offset)
