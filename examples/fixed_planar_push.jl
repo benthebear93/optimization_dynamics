@@ -10,12 +10,14 @@ MODE = :rotate
 GB = false 
 
 ## Parameter setting
-h = 0.1
+h = 0.05
 T = 26
 num_w = 1
 nc_impact = 1
-rot_goal = [0.17453, 0.17453*2, 0.17453*3] # ~= 10deg, 20deg, 30deg
+rot_goal = [0.17453, 0.17453*2, 0.17453*3, 0.17453*4, 0.17453*5] # ~= 10deg, 20deg, 30deg
+uw_values = [0.001, 0.0025, 0.005] # torque disturbance values
 test_number = 1
+test_num_w = 3
 
 ## state-space model
 im_dyn = ImplicitDynamics(fixedplanarpush, h, eval(r_fpp_func), eval(rz_fpp_func), eval(rθ_fpp_func); 
@@ -61,9 +63,9 @@ function objt(x, u, w)
 
 	J += 0.5 * transpose(v1) * Diagonal([1.0, 0.1, 0.1]) * v1 
 	J += 0.5 * transpose(x - xT) * Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1]) * (x - xT) 
-	J += 0.5 * (MODE == :translate ? 1.0e-1 : 1.0e-2) * transpose(u) * u
+	J += 0.5 * 0.1* transpose(u) * u
 	ϕ = ϕ_func(fixedplanarpush, q2)[1]  # SDF 값 (접촉 시 0)
-	J += 0.5 * (ϕ)^2
+	J += 0.5 * 10*(ϕ)^2
 
 	return J
 end
@@ -124,7 +126,7 @@ solver = iLQR.solver(model, obj, cons,
 		obj_tol=1.0e-3,
 		grad_tol=1.0e-3,
 		max_iter=10,
-		max_al_iter=20,
+		max_al_iter=30,
 		con_tol=0.005,
 		ρ_init=1.0, 
 		ρ_scale=10.0, 
@@ -145,88 +147,99 @@ iLQR.reset!(solver.s_data)
 		
 ## solution
 x_sol, u_sol = iLQR.get_trajectory(solver)
-# gamma_sol = iLQR.get_contact_force(solver)
+gamma_sol = iLQR.get_contact_force(solver)
 q_sol = state_to_configuration(x_sol)
 
 ## torque distrubance
 Random.seed!(1234)
-uw = [[(0.000+ 0.00 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
+uw = [[(uw_values[test_num_w]+ 0.01 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
 
-x_dist, gammal_dist = iLQR.rollout(model, x1, u_sol, uw) #gamma_hist_dist
+x_dist, gamma_hist_dist = iLQR.rollout(model, x1, u_sol, uw) #gamma_hist_dist
 q_dist = state_to_configuration(x_dist)
 
 
-# using Plots
-
-# θ_sol = [q_sol[i][1] for i in 1:T]
-# h = 0.1
-# time = collect(0:h:(T-1)*h)
+using Plots
+θ_sol = [q_sol[i][1] for i in 1:T]
+θ_dist = [q_dist[i][1] for i in 1:T]
+time = collect(0:h:(T-1)*h)
 
 # Plot for θ_sol with θ_goal
-# θ_goal_line = fill(θ_goal, length(time))  # Create constant array for θ_goal
-# plot(time, θ_sol, label="dist_θ", linewidth=2, color=:red)
-# plot!(time, θ_goal_line, label="θ_goal", linewidth=2, color=:black, linestyle=:dash)
-# title!("Object θ with disturbance")
-# xlabel!("Time (s)")
-# ylabel!("Rotation (rad)")
-# savefig("point_contact_10deg.png")
+θ_goal_line = fill(θ_goal, length(time))  # Create constant array for θ_goal
+plot(time, θ_sol, label="actual_θ", linewidth=2, color=:green)
+plot!(time, θ_dist, label="dist_θ", linewidth=2, color=:red)
+plot!(time, θ_goal_line, label="goal_θ", linewidth=2, color=:black, linestyle=:dash)
+title!("[point] θ with dist (θ_goal=$(rot_goal[test_number]), uw=$(uw_values[test_num_w]))")
+xlabel!("Time (s)")
+ylabel!("Rotation (rad)")
+savefig("data/point_θ_goal_$(rot_goal[test_number])_$(uw_values[test_num_w]).png")
 
 # Plot for gamma_sol vs gamma_hist_dist
-# gamma_sol_vals = [gamma_sol[i][1] for i in 1:T-1]  # Extract first component of gamma_sol
-# gamma_hist_dist_vals = [gamma_hist_dist[i][1] for i in 1:T-1]  # Extract first component of gamma_hist_dist
-# time_controls = collect(0:h:(T-2)*h)  # Time vector for T-1 steps
+gamma_sol_vals = [gamma_sol[i][1] for i in 1:T-1]  # Extract first component of gamma_sol
+gamma_hist_dist_vals = [gamma_hist_dist[i][1] for i in 1:T-1]  # Extract first component of gamma_hist_dist
+time_controls = collect(0:h:(T-2)*h)  # Time vector for T-1 steps
 
-# plot(time_controls, gamma_sol_vals, label="γ_sol", linewidth=2, color=:blue)
-# plot!(time_controls, gamma_hist_dist_vals, label="γ_hist_dist", linewidth=2, color=:green, linestyle=:dash)
-# title!("Contact Force Comparison")
-# xlabel!("Time (s)")
-# ylabel!("Contact Force")
-# savefig("gamma_comparison_10deg.png")
+plot(time_controls, gamma_sol_vals, label="γ_actual", linewidth=2, color=:green)
+plot!(time_controls, gamma_hist_dist_vals, label="γ_dist", linewidth=2, color=:red, linestyle=:dash)
+title!("[point] Contact Force (θ_goal=$(rot_goal[test_number]), uw=$(uw_values[test_num_w]))")
+xlabel!("Time (s)")
+ylabel!("Contact Force")
+savefig("data/point_contact_force_$(rot_goal[test_number])_$(uw_values[test_num_w]).png")
 
 # # Plot for u_sol
-# u1_vals = [u_sol[i][1] for i in 1:T-1]  # First component of u_sol
-# u2_vals = [u_sol[i][2] for i in 1:T-1]  # Second component of u_sol
-# time_controls = collect(0:h:(T-2)*h)  # Time vector for T-1 steps
+u1_vals = [u_sol[i][1] for i in 1:T-1]  # First component of u_sol
+u2_vals = [u_sol[i][2] for i in 1:T-1]  # Second component of u_sol
+time_controls = collect(0:h:(T-2)*h)  # Time vector for T-1 steps
 
-# plot(time_controls, u1_vals, label="u_1", linewidth=2, color=:blue)
-# plot!(time_controls, u2_vals, label="u_2", linewidth=2, color=:green, linestyle=:dash)
-# title!("Control Inputs")
-# xlabel!("Time (s)")
-# ylabel!("Control Input")
-# savefig("control_inputs.png")
-
-for i=1:T-1
-	println("u_sol :", u_sol[i])
-end
-
-for i=1:T-1
-	println("gammal_dist :", gammal_dist[i])
-end
+plot(time_controls, u1_vals, label="u_1", linewidth=2, color=:blue)
+plot!(time_controls, u2_vals, label="u_2", linewidth=2, color=:green, linestyle=:dash)
+title!("[point] Control Inputs (θ_goal=$(rot_goal[test_number]))")
+xlabel!("Time (s)")
+ylabel!("Control Input")
+savefig("data/point_control_inputs_$(rot_goal[test_number]).png")
 
 ## visualization 
 vis = Visualizer() 
 render(vis);
 
-visualize!(vis, fixedplanarpush, q_sol, Δt=h);
+visualize_with_fadeout!(vis, fixedplanarpush, q_sol, Δt=h);
 
-vis2 = Visualizer() 
-render(vis2);
+# vis2 = Visualizer() 
+# render(vis2);
 
-visualize!(vis2, fixedplanarpush, q_dist, Δt=h);
+# visualize_with_fadeout!(vis2, fixedplanarpush, q_dist, Δt=h);
 
-# using CSV
-# using DataFrames
-# function save_to_csv(q_sol, u_sol, T, filename_q="data/fixed_qdist_000.csv", filename_u="data/fixed_udist_005.csv")
-#     # q_sol 저장
-#     nq = length(q_sol[1]) 
-#     q_data = DataFrame([getindex.(q_sol, i) for i in 1:nq], ["q_$i" for i in 1:nq])
-#     CSV.write(filename_q, q_data)
+using CSV
+using DataFrames
+function save_to_csv(q_sol, u_sol, q_dist, gamma_sol_vals, gamma_hist_dist_vals, T;
+	filename_q="data/point_q_actual_$(rot_goal[test_number]).csv",
+	filename_u="data/point_u_actual_$(rot_goal[test_number]).csv",
+	filename_q_dist="data/point_q_dist_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv",
+	filename_gamma_sol="data/point_gamma_sol_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv",
+	filename_gamma_dist_sol="data/point_gamma_dist_sol_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv")
 
-#     # u_sol 저장
-#     nu = length(u_sol[1])
-#     u_data = DataFrame([getindex.(u_sol, i) for i in 1:nu], ["u_$i" for i in 1:nu])
-#     CSV.write(filename_u, u_data)
-# end
+    # q_sol 저장
+    nq = length(q_sol[1]) 
+    q_data = DataFrame([getindex.(q_sol, i) for i in 1:nq], ["q_$i" for i in 1:nq])
+    CSV.write(filename_q, q_data)
 
-# # save_to_csv(q_nom, u_nom, T)
-# save_to_csv(q_sol, u_sol, T)
+	# q_sol 저장
+    nq = length(q_dist[1]) 
+    q_dist_data = DataFrame([getindex.(q_dist, i) for i in 1:nq], ["q_dist_$i" for i in 1:nq])
+    CSV.write(filename_q_dist, q_dist_data)
+
+    # u_sol 저장
+    nu = length(u_sol[1])
+    u_data = DataFrame([getindex.(u_sol, i) for i in 1:nu], ["u_$i" for i in 1:nu])
+    CSV.write(filename_u, u_data)
+
+    # gamma_sol 저장 (그냥 벡터라 바로 DF로)
+    gamma_sol_data = DataFrame(gamma_sol=gamma_sol_vals)
+    CSV.write(filename_gamma_sol, gamma_sol_data)
+
+    # gamma_hist_dist 저장
+    gamma_dist_sol_data = DataFrame(gamma_sol_dist=gamma_hist_dist_vals)
+    CSV.write(filename_gamma_dist_sol, gamma_dist_sol_data)
+end
+
+# save_to_csv(q_nom, u_nom, T)
+save_to_csv(q_sol, u_sol, q_dist, gamma_sol, gamma_hist_dist, T)

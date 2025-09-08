@@ -26,7 +26,7 @@ export
     load
 
 export 
-    Visualizer, render, open, visualize!  
+    Visualizer, render, open, visualize!, visualize_with_fadeout!
 
 include("dynamics.jl")
 include("ls.jl")
