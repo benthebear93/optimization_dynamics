@@ -14,10 +14,13 @@ h = 0.05
 T = 26
 num_w = 1
 nc_impact = 1
-rot_goal = [0.17453, 0.17453*2, 0.17453*3, 0.17453*4, 0.17453*5] # ~= 10deg, 20deg, 30deg
+rot_goal = [0.17453, 0.17453*2, 0.17453*3, 0.17453*4] # ~= 10deg, 20deg, 30deg
 uw_values = [0.001, 0.0025, 0.005] # torque disturbance values
-test_number = 1
+test_number = 3
 test_num_w = 3
+## initial conditions and goal
+# r_dim = 0.325
+r_dim = 0.1
 
 ## state-space model
 im_dyn = ImplicitDynamics(fixedplanarpush, h, eval(r_fpp_func), eval(rz_fpp_func), eval(rθ_fpp_func); 
@@ -34,8 +37,6 @@ ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w),
 	nx, nx, nu, num_w, nc_impact) 
 model = [ilqr_dyn for t = 1:T-1];
 
-## initial conditions and goal
-r_dim = 0.1
 if MODE == :translate 
 	q0 = [0.0, -r_dim - 1.0e-8, 0.0]
 	q1 = [0.0, -r_dim - 1.0e-8, 0.0]
@@ -112,6 +113,7 @@ cons = [[cont for t = 1:T-1]..., conT];
 
 ## Initial rollout
 x1 = [q0; q1]
+# ū = [t < 5 ? [4.5; 0.0] : t < 10 ? [6.5; 0.0] : t < 20 ? [0.1; 0.0] : [0.1; 0.1] for t = 1:T-1] #real
 ū = [t < 5 ? [2.5; 0.0] : t < 10 ? [2.5; 0.0] : t < 20 ? [0.1; 0.0] : [0.1; 0.1] for t = 1:T-1]
 
 w = [[(0.000+ 0.00 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
@@ -200,46 +202,61 @@ savefig("data/point_control_inputs_$(rot_goal[test_number]).png")
 ## visualization 
 vis = Visualizer() 
 render(vis);
+visualize_with_trail!(vis, fixedplanarpush, q_sol[1:2], Δt=h);
 
-visualize_with_fadeout!(vis, fixedplanarpush, q_sol, Δt=h);
+vis2 = Visualizer() 
+render(vis2);
+visualize_with_trail!(vis2, fixedplanarpush, q_sol[1:9], Δt=h);
 
+vis3 = Visualizer() 
+render(vis3);
+visualize_with_trail!(vis3, fixedplanarpush, q_sol[1:17], Δt=h);
+
+vis4 = Visualizer() 
+render(vis4);
+visualize_with_trail!(vis4, fixedplanarpush, q_sol[1:26], Δt=h);
+
+vis5 = Visualizer() 
+render(vis5);
+visualize!(vis5, fixedplanarpush, q_sol, Δt=h);
+# visualize_with_trail!(vis5, fixedplanarpush, q_sol, Δt=h);
 # vis2 = Visualizer() 
 # render(vis2);
 
 # visualize_with_fadeout!(vis2, fixedplanarpush, q_dist, Δt=h);
 
-using CSV
-using DataFrames
-function save_to_csv(q_sol, u_sol, q_dist, gamma_sol_vals, gamma_hist_dist_vals, T;
-	filename_q="data/point_q_actual_$(rot_goal[test_number]).csv",
-	filename_u="data/point_u_actual_$(rot_goal[test_number]).csv",
-	filename_q_dist="data/point_q_dist_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv",
-	filename_gamma_sol="data/point_gamma_sol_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv",
-	filename_gamma_dist_sol="data/point_gamma_dist_sol_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv")
+# using CSV
+# using DataFrames
+# function save_to_csv(q_sol, u_sol, q_dist, gamma_sol_vals, gamma_hist_dist_vals, T;
+# 	filename_q="data/point_q_actual_$(rot_goal[test_number]).csv",
+# 	filename_u="data/point_u_actual_$(rot_goal[test_number]).csv",
+# 	filename_q_dist="data/point_q_dist_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv",
+# 	filename_gamma_sol="data/point_gamma_sol_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv",
+# 	filename_gamma_dist_sol="data/point_gamma_dist_sol_$(rot_goal[test_number])_$(uw_values[test_num_w]).csv")
 
-    # q_sol 저장
-    nq = length(q_sol[1]) 
-    q_data = DataFrame([getindex.(q_sol, i) for i in 1:nq], ["q_$i" for i in 1:nq])
-    CSV.write(filename_q, q_data)
+#     # q_sol 저장
+#     nq = length(q_sol[1]) 
+#     q_data = DataFrame([getindex.(q_sol, i) for i in 1:nq], ["q_$i" for i in 1:nq])
+#     CSV.write(filename_q, q_data)
 
-	# q_sol 저장
-    nq = length(q_dist[1]) 
-    q_dist_data = DataFrame([getindex.(q_dist, i) for i in 1:nq], ["q_dist_$i" for i in 1:nq])
-    CSV.write(filename_q_dist, q_dist_data)
+# 	# q_sol 저장
+#     nq = length(q_dist[1]) 
+#     q_dist_data = DataFrame([getindex.(q_dist, i) for i in 1:nq], ["q_dist_$i" for i in 1:nq])
+#     CSV.write(filename_q_dist, q_dist_data)
 
-    # u_sol 저장
-    nu = length(u_sol[1])
-    u_data = DataFrame([getindex.(u_sol, i) for i in 1:nu], ["u_$i" for i in 1:nu])
-    CSV.write(filename_u, u_data)
+#     # u_sol 저장
+#     nu = length(u_sol[1])
+#     u_data = DataFrame([getindex.(u_sol, i) for i in 1:nu], ["u_$i" for i in 1:nu])
+#     CSV.write(filename_u, u_data)
 
-    # gamma_sol 저장 (그냥 벡터라 바로 DF로)
-    gamma_sol_data = DataFrame(gamma_sol=gamma_sol_vals)
-    CSV.write(filename_gamma_sol, gamma_sol_data)
+#     # gamma_sol 저장 (그냥 벡터라 바로 DF로)
+#     gamma_sol_data = DataFrame(gamma_sol=gamma_sol_vals)
+#     CSV.write(filename_gamma_sol, gamma_sol_data)
 
-    # gamma_hist_dist 저장
-    gamma_dist_sol_data = DataFrame(gamma_sol_dist=gamma_hist_dist_vals)
-    CSV.write(filename_gamma_dist_sol, gamma_dist_sol_data)
-end
+#     # gamma_hist_dist 저장
+#     gamma_dist_sol_data = DataFrame(gamma_sol_dist=gamma_hist_dist_vals)
+#     CSV.write(filename_gamma_dist_sol, gamma_dist_sol_data)
+# end
 
-# save_to_csv(q_nom, u_nom, T)
-save_to_csv(q_sol, u_sol, q_dist, gamma_sol, gamma_hist_dist, T)
+# # save_to_csv(q_nom, u_nom, T)
+# save_to_csv(q_sol, u_sol, q_dist, gamma_sol, gamma_hist_dist, T)

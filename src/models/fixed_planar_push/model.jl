@@ -22,6 +22,7 @@ struct FixedPlanarPush{T} <: Model{T}
 end
 
 # Kinematics
+# r_dim = 0.325 # real
 r_dim = 0.1
 
 function sd_2d_box(p, pose)

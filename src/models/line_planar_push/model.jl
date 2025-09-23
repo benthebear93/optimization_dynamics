@@ -22,7 +22,7 @@ struct LinePlanarPush{T} <: Model{T}
 end
 
 # Kinematics
-r_dim = 0.1
+r_dim = 0.1 #0.325
 
 function sd_2d_box(pusher, object)
 	Δ = rotation_matrix(-object[3]) * (pusher - object[1:2])
@@ -45,7 +45,7 @@ gravity = 9.81
 mass_block = 1.0   # mass
 mass_pusher = 5.0
 inertia = 1.0 / 12.0 * mass_block * ((2.0 * r_dim)^2 + (2.0 * r_dim)^2)
-L = 0.05
+L = 0.05 #0.1625
 k_spring = 300
 c_damping = 50
 # rnd = 0.01
