@@ -17,18 +17,24 @@ GB = false
 # ## state-space model
 h = 0.1
 T = 26
-
+nc_impact = 1
+num_w = 0
 im_dyn = ImplicitDynamics(planarpush, h, eval(r_pp_func), eval(rz_pp_func), eval(rθ_pp_func); 
     r_tol=1.0e-8, κ_eval_tol=1.0e-4, κ_grad_tol=1.0e-2, nc=1, nb=9, info=(GB ? GradientBundle(planarpush, N=50, ϵ=1.0e-4) : nothing)) 
 
 nx = 2 * planarpush.nq
 nu = planarpush.nu 
 
+@show im_dyn.q1
+@show im_dyn.q2
+@show im_dyn.eval_sim.traj.γ
+@show im_dyn.eval_sim.traj.b
 # ## iLQR model
 ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w), 
 	(dx, x, u, w) -> GB ? fx_gb(dx, im_dyn, x, u, w) : fx(dx, im_dyn, x, u, w), 
 	(du, x, u, w) -> GB ? fu_gb(du, im_dyn, x, u, w) : fu(du, im_dyn, x, u, w), 
-	nx, nx, nu) 
+	(gamma, x, u, w) -> f_debug(gamma, im_dyn, x, u, w),
+	nx, nx, nu, num_w, nc_impact) 
 
 model = [ilqr_dyn for t = 1:T-1];
 print("len model ", length(model))
@@ -53,7 +59,6 @@ elseif MODE == :rotate
 	xT = [qT; qT]
 end
 
-println("theta goal ", θ_goal)
 # ## objective
 function objt(x, u, w)
 	J = 0.0 
@@ -109,8 +114,9 @@ cons = [[cont for t = 1:T-1]..., conT];
 
 # ## rollout
 x1 = [q0; q1]
+w = [[(0.000+ 0.00 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
 ū = MODE == :translate ? [t < 5 ? [1.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [1.0; 0.0] : t < 10 ? [0.5; 0.0] : [0.0; 0.0] for t = 1:T-1]
-x̄ = iLQR.rollout(model, x1, ū)
+x̄, gamma_hist = iLQR.rollout(model, x1, ū, w)
 # for i=1:T
 #     println(i, " : ", x̄[i])
 # end
@@ -137,10 +143,10 @@ iLQR.initialize_states!(solver, x̄);
 iLQR.reset!(solver.s_data)
 @time iLQR.solve!(solver);
 
-@show iLQR.eval_obj(solver.m_data.obj.costs, solver.m_data.x, solver.m_data.u, solver.m_data.w)
-@show solver.s_data.iter[1]
-@show norm(terminal_con(solver.m_data.x[T], zeros(0), zeros(0)), Inf)
-@show solver.s_data.obj[1] # augmented Lagrangian cost
+# @show iLQR.eval_obj(solver.m_data.obj.costs, solver.m_data.x, solver.m_data.u, solver.m_data.w)
+# @show solver.s_data.iter[1]
+# @show norm(terminal_con(solver.m_data.x[T], zeros(0), zeros(0)), Inf)
+# @show solver.s_data.obj[1] # augmented Lagrangian cost
 		
 # ## solution
 x_sol, u_sol = iLQR.get_trajectory(solver)

@@ -95,7 +95,7 @@ include("../src/models/visualize.jl")
 export 
     # acrobot_impact, acrobot_nominal,
     # cartpole_friction, cartpole_frictionless, 
-    # planarpush, 
+    planarpush, 
     fixedplanarpush, lineplanarpush
     # rocket, RocketInfo, f_rocket_proj, fx_rocket_proj, fu_rocket_proj, f_rocket, fx_rocket, fu_rocket
 
@@ -104,7 +104,7 @@ export
     # r_acrobot_nominal_func, rz_acrobot_nominal_func, rθ_acrobot_nominal_func, rz_acrobot_nominal_array, rθ_acrobot_nominal_array,
     # r_cartpole_friction_func, rz_cartpole_friction_func, rθ_cartpole_friction_func, rz_cartpole_friction_array, rθ_cartpole_friction_array,
     # r_cartpole_frictionless_func, rz_cartpole_frictionless_func, rθ_cartpole_frictionless_func, rz_cartpole_frictionless_array, rθ_cartpole_frictionless_array,
-    # r_pp_func, rz_pp_func, rθ_pp_func, rz_pp_array, rθ_pp_array,
+    r_pp_func, rz_pp_func, rθ_pp_func, rz_pp_array, rθ_pp_array,
     r_fpp_func,rz_fpp_func, rθ_fpp_func, rz_fpp_array, rθ_fpp_array,
     r_lpp_func,rz_lpp_func, rθ_lpp_func, rz_lpp_array, rθ_lpp_array
     # r_rocket_func, rz_rocket_func, rθ_rocket_func, rz_rocket_array, rθ_rocket_array,
