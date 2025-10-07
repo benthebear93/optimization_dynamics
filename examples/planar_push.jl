@@ -29,15 +29,26 @@ nu = planarpush.nu
 @show im_dyn.q2
 @show im_dyn.eval_sim.traj.γ
 @show im_dyn.eval_sim.traj.b
+@show im_dyn.idx_q1
+@show im_dyn.idx_q2
+@show im_dyn.idx_u1
+@show im_dyn.eval_sim.idx_z.γ
+@show im_dyn.eval_sim.idx_z.b
+@show im_dyn.eval_sim.idx_θ.q1
+@show im_dyn.eval_sim.idx_θ.q2
+@show im_dyn.eval_sim.idx_θ.u
+@show im_dyn.eval_sim.idx_θ.w
+@show im_dyn.eval_sim.h
+# @show im_dyn.H
+
 # ## iLQR model
 ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w), 
 	(dx, x, u, w) -> GB ? fx_gb(dx, im_dyn, x, u, w) : fx(dx, im_dyn, x, u, w), 
 	(du, x, u, w) -> GB ? fu_gb(du, im_dyn, x, u, w) : fu(du, im_dyn, x, u, w), 
-	(gamma, x, u, w) -> f_debug(gamma, im_dyn, x, u, w),
+	(gamma, contact_vel, x, u, w) -> f_debug(gamma, contact_vel, im_dyn, x, u, w),
 	nx, nx, nu, num_w, nc_impact) 
 
 model = [ilqr_dyn for t = 1:T-1];
-print("len model ", length(model))
 # ## initial conditions and goal
 r_dim = 0.1
 if MODE == :translate 
@@ -116,7 +127,7 @@ cons = [[cont for t = 1:T-1]..., conT];
 x1 = [q0; q1]
 w = [[(0.000+ 0.00 * rand()) * rand([-1, 1])] for t = 1:T] # 0.005 + 0.01 baseline
 ū = MODE == :translate ? [t < 5 ? [1.0; 0.0] : [0.0; 0.0] for t = 1:T-1] : [t < 5 ? [1.0; 0.0] : t < 10 ? [0.5; 0.0] : [0.0; 0.0] for t = 1:T-1]
-x̄, gamma_hist = iLQR.rollout(model, x1, ū, w)
+x̄, gamma_hist, cv_hist = iLQR.rollout(model, x1, ū, w)
 # for i=1:T
 #     println(i, " : ", x̄[i])
 # end
