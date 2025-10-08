@@ -161,6 +161,10 @@ iLQR.reset!(solver.s_data)
 		
 # ## solution
 x_sol, u_sol = iLQR.get_trajectory(solver)
+x_sol, gamma_sol_hist, cv_sol_hist = iLQR.rollout(model, x1, u_sol, w)
+@show x_sol
+@show gamma_sol_hist
+@show cv_sol_hist
 q_sol = state_to_configuration(x_sol)
 visualize!(vis, planarpush, q_sol, Δt=h);
 

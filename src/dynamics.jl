@@ -110,10 +110,10 @@ function f_debug(gamma, contact_vel, model::ImplicitDynamics, x, u, w)
 		gamma[i] = γ[1][i]
 	end
 
-	@show b
-	@show contact_vel
-	print("type b", typeof(b))
-	print("type cv", typeof(contact_vel))
+	# @show b
+	# @show contact_vel
+	# print("type b", typeof(b))
+	# print("type cv", typeof(contact_vel))
 	for i=1:10 - model.nc_impact
 		contact_vel[i]= b[1][i]
 	end
