@@ -103,22 +103,27 @@ function f(d, model::ImplicitDynamics, x, u, w)
 end
 
 #TODO : MAKE REF DEBUG FUNCTION
-function f_debug(gamma, contact_vel, model::ImplicitDynamics, x, u, w)
+function f_debug(gamma, contact_vel, ip_z, ip_θ, model::ImplicitDynamics, x, u, w)
 	γ = model.eval_sim.traj.γ
 	b = model.eval_sim.traj.b
+	ip_z_temp = model.eval_sim.ip.z
+	ip_θ_temp = model.eval_sim.ip.θ
 	for i=1:model.nc_impact
 		gamma[i] = γ[1][i]
 	end
-
-	# @show b
-	# @show contact_vel
-	# print("type b", typeof(b))
-	# print("type cv", typeof(contact_vel))
 	for i=1:10 - model.nc_impact
 		contact_vel[i]= b[1][i]
 	end
 
-	return gamma, contact_vel
+	for i=1:35
+		ip_z[i]= ip_z_temp[i]
+	end
+
+	for i=1:13
+		ip_θ[i]= ip_θ_temp[i]
+	end
+
+	return gamma, contact_vel, ip_z, ip_θ
 end
 
 function fx(dx, model::ImplicitDynamics, x, u, w)

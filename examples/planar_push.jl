@@ -25,27 +25,28 @@ im_dyn = ImplicitDynamics(planarpush, h, eval(r_pp_func), eval(rz_pp_func), eval
 nx = 2 * planarpush.nq
 nu = planarpush.nu 
 
-@show im_dyn.q1
-@show im_dyn.q2
-@show im_dyn.eval_sim.traj.γ
-@show im_dyn.eval_sim.traj.b
-@show im_dyn.idx_q1
-@show im_dyn.idx_q2
-@show im_dyn.idx_u1
-@show im_dyn.eval_sim.idx_z.γ
-@show im_dyn.eval_sim.idx_z.b
-@show im_dyn.eval_sim.idx_θ.q1
-@show im_dyn.eval_sim.idx_θ.q2
-@show im_dyn.eval_sim.idx_θ.u
-@show im_dyn.eval_sim.idx_θ.w
-@show im_dyn.eval_sim.h
+# @show im_dyn.eval_sim.ip.z
+# @show im_dyn.q1
+# @show im_dyn.q2
+# @show im_dyn.eval_sim.traj.γ
+# @show im_dyn.eval_sim.traj.b
+# @show im_dyn.idx_q1
+# @show im_dyn.idx_q2
+# @show im_dyn.idx_u1
+# @show im_dyn.eval_sim.idx_z.γ
+# @show im_dyn.eval_sim.idx_z.b
+# @show im_dyn.eval_sim.idx_θ.q1
+# @show im_dyn.eval_sim.idx_θ.q2
+# @show im_dyn.eval_sim.idx_θ.u
+# @show im_dyn.eval_sim.idx_θ.w
+# @show im_dyn.eval_sim.h
 # @show im_dyn.H
 
 # ## iLQR model
 ilqr_dyn = iLQR.Dynamics((d, x, u, w) -> f(d, im_dyn, x, u, w), 
 	(dx, x, u, w) -> GB ? fx_gb(dx, im_dyn, x, u, w) : fx(dx, im_dyn, x, u, w), 
 	(du, x, u, w) -> GB ? fu_gb(du, im_dyn, x, u, w) : fu(du, im_dyn, x, u, w), 
-	(gamma, contact_vel, x, u, w) -> f_debug(gamma, contact_vel, im_dyn, x, u, w),
+	(gamma, contact_vel, ip_z, ip_θ, x, u, w) -> f_debug(gamma, contact_vel, ip_z, ip_θ, im_dyn, x, u, w),
 	nx, nx, nu, num_w, nc_impact) 
 
 model = [ilqr_dyn for t = 1:T-1];
@@ -153,21 +154,18 @@ iLQR.initialize_states!(solver, x̄);
 # ## solve
 iLQR.reset!(solver.s_data)
 @time iLQR.solve!(solver);
-
-# @show iLQR.eval_obj(solver.m_data.obj.costs, solver.m_data.x, solver.m_data.u, solver.m_data.w)
-# @show solver.s_data.iter[1]
-# @show norm(terminal_con(solver.m_data.x[T], zeros(0), zeros(0)), Inf)
-# @show solver.s_data.obj[1] # augmented Lagrangian cost
 		
 # ## solution
 x_sol, u_sol = iLQR.get_trajectory(solver)
-x_sol, gamma_sol_hist, cv_sol_hist = iLQR.rollout(model, x1, u_sol, w)
-@show x_sol
-@show gamma_sol_hist
-@show cv_sol_hist
-q_sol = state_to_configuration(x_sol)
-visualize!(vis, planarpush, q_sol, Δt=h);
+x_sol, gamma_hist, b_hist, ip_z_hist, ip_θ_hist = iLQR.rollout(model, x1, u_sol, w)
 
-# ## benchmark 
-# solver.options.verbose = false
-# @benchmark iLQR.solve!($solver, x̄, ū) setup=(x̄=deepcopy(x̄), ū=deepcopy(ū));
+@show b_hist
+@show ip_z_hist
+# @show im_dyn.eval_sim.ip.z
+# @show im_dyn.eval_sim.ip.θ
+# @show im_dyn.idx_q1
+# @show im_dyn.idx_q2
+# @show im_dyn.idx_u1
+
+# q_sol = state_to_configuration(x_sol)
+# visualize!(vis, planarpush, q_sol, Δt=h);
