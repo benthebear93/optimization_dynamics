@@ -27,6 +27,7 @@ nθ = 2 * planarpush.nq + planarpush.nu + planarpush.nw + 1
 
 # Residual
 r_pp = residual(planarpush, z, θ, κ)
+@show r_pp
 @show size(r_pp)
 rz_pp = Symbolics.jacobian(r_pp, z)
 rθ_pp = Symbolics.jacobian(r_pp, θ)

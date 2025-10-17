@@ -19,7 +19,10 @@ using RoboDojo
 import RoboDojo: LinearSolver, LUSolver, Model, ResidualMethods, Space, Disturbances, IndicesZ, InteriorPoint, EmptySolver, Policy, Trajectory, GradientTrajectory, InteriorPointOptions, IndicesOptimization, interior_point, interior_point_solve!, bilinear_violation, residual_violation, general_correction_term!, r!, rz!, rθ!, linear_solve!, lu_solver, empty_policy, empty_disturbances, friction_coefficients, SimulatorStatistics, SimulatorOptions, indices_θ, num_data, initialize_z!, initialize_θ!, indices_z, indices_θ, simulate!, policy, process!, Simulator, cone_product, lagrangian_derivatives, Indicesθ
 using Scratch 
 using Plots
+using StaticArrays
 
+include("save_trajectory.jl")
+export save_trajectory
 export LinearSolver, LUSolver, Model, ResidualMethods, Space, Disturbances, IndicesZ, InteriorPoint, EmptySolver, Policy, Trajectory, GradientTrajectory, InteriorPointOptions, IndicesOptimization, interior_point, interior_point_solve!, bilinear_violation, residual_violation, general_correction_term!, r!, rz!, rθ!, linear_solve!, lu_solver, empty_policy, empty_disturbances, friction_coefficients, SimulatorStatistics, SimulatorOptions, indices_θ, num_data, initialize_z!, initialize_θ!, indices_z, indices_θ, simulate!, policy, process!, Simulator, cone_product, lagrangian_derivatives, Indicesθ
 
 export 
@@ -31,7 +34,6 @@ export
 include("dynamics.jl")
 include("ls.jl")
 include("gradient_bundle.jl")
-
 export 
     ImplicitDynamics, f, fx, fu, state_to_configuration,
     f_gb, fx_gb, fu_gb, f_debug
@@ -64,6 +66,7 @@ include("../src/models/planar_push/model.jl")
 include("../src/models/planar_push/simulator.jl")
 include("../src/models/planar_push/visuals.jl")
 path_planarpush = @get_scratch!("planarpush")
+# @show r_pp_func
 @load joinpath(path_planarpush, "residual.jld2") r_pp_func rz_pp_func rθ_pp_func rz_pp_array rθ_pp_array
 
 # fixed planar push 
