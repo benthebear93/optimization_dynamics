@@ -173,6 +173,10 @@ const iLQR = OptimizationDynamics.IterativeLQR
 using LinearAlgebra
 using Random
 
+function module_dir()
+    @__DIR__
+end
+
 # ## visualization 
 vis = Visualizer() 
 render(vis);
@@ -316,11 +320,21 @@ iLQR.reset!(solver.s_data)
 # ## solution
 x_sol, u_sol = iLQR.get_trajectory(solver)
 q_sol = state_to_configuration(x_sol)
-x_rollout_sol, gamma_hist, cv_hist, ip_z_hist, ip_θ_hist = iLQR.rollout(model, x1, u_sol, w)
+x_rollout_sol, gamma_hist, b_hist, ip_z_hist, ip_θ_hist = iLQR.rollout(model, x1, u_sol, w)
 @show u_sol
 @show x_rollout_sol
 q_rollout_sol = state_to_configuration(x_rollout_sol)
 visualize!(vis, planarpush, q_rollout_sol, Δt=h);
+
+# # JLD2 파일 저장
+gait_path = joinpath(module_dir(), "pusher_ref_traj.jld2")
+save_trajectory(gait_path, x_rollout_sol, u_sol, gamma_hist, b_hist, ip_z_hist, ip_θ_hist, w, model, h, T)
+
+# 저장된 데이터 로드 (확인용)
+# ref_traj = deepcopy(get_trajectory(planarpush, env, gait_path, load_type=:joint_traj))
+
+q_sol = state_to_configuration(x_sol)
+visualize!(vis, planarpush, q_sol, Δt=h);
 
 # ## benchmark 
 # solver.options.verbose = false
