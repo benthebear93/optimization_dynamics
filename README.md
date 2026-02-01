@@ -40,7 +40,7 @@ The path-following solver and hopper model can be found in [RoboDojo.jl](https:/
 cd /path/to/OptimizationDynamics
 julia
 ]
-activate.
+activate .
 instantiate
 build
 ```
@@ -48,6 +48,7 @@ build
 ```
 julia --project=.
 include("examples/planar_push.jl")
+include("examples/jld2_to_json.jl")
 include("examples/line_planar_push.jl")
 ```
 ## ram leak

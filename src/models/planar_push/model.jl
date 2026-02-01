@@ -26,7 +26,7 @@ r_dim = 0.1
 function sd_2d_box(p, pose)
 	x, y, θ = pose
 	Δ = rotation_matrix(-θ) * (p - pose[1:2])
-	s = 2
+	s = 10
 	sum(Δ.^s)^(1/s) - r_dim
 end
 
