@@ -1,0 +1,46 @@
+ 42.929953 seconds (25.50 M allocations: 1.324 GiB, 0.65% gc time, 17.38% compilation time)
+iLQR.eval_obj(solver.m_data.obj.costs, solver.m_data.x, solver.m_data.u, solver.m_data.w) = 21.516772532014567
+solver.s_data.iter[1] = 54
+norm(terminal_con(solver.m_data.x[T], zeros(0), zeros(0)), Inf) = 0.004417512511195487
+solver.s_data.obj[1] = 35.68739958737159
+box_goal = [0.3, 0.2]
+box_final = [0.30371552548759334, 0.19707525725546388]
+box_pos_err = [0.003715525487593352, -0.002924742744536135]
+norm(box_pos_err) = 0.004728556838050335
+θ_goal_eval = 0.8
+θ_final = 0.8044175125111955
+θ_err = 0.004417512511195487
+control_effort = 27.899919631572665
+gamma_mean_abs = 0.0
+gamma_peak = 0.0
+tau_proxy_peak = 0.0
+slip_max_abs = 0.007756610026957364
+slip_margin_to_bound = -0.002756610026957364
+158.691535 seconds (15.38 M allocations: 698.667 MiB, 0.10% gc time, 1.90% compilation time)
+iLQR.eval_obj(solver.m_data.obj.costs, solver.m_data.x, solver.m_data.u, solver.m_data.w) = 14.359521006492225
+solver.s_data.iter[1] = 48
+norm(terminal_con(solver.m_data.x[T], zeros(0), zeros(0)), Inf) = 0.001286791886154215
+solver.s_data.obj[1] = 14.373543122949801
+box_goal = [0.3, 0.2]
+box_final = [0.2997556648784885, 0.20101281286601017]
+box_pos_err = [-0.0002443351215115075, 0.0010128128660101543]
+norm(box_pos_err) = 0.0010418682993352595
+θ_goal_eval = 0.8
+θ_final = 0.7987132081138458
+θ_err = -0.001286791886154215
+control_effort = 13.576162251633331
+gamma1_mean_abs = 0.0
+gamma2_mean_abs = 0.0
+gamma_diff_peak = 0.0
+tau_proxy_peak = 0.0
+slip1_max_abs = 0.0052239192011444835
+slip2_max_abs = 0.005429147279389798
+slip_margin_to_bound = -0.00042914727938979814
+=== Running seed 1234 (N_MC=200) ===
+=== POINT(seed=1234) Robustness ===
+open-loop: mean pos err = 0.0334847854536979, mean |theta err| = 0.2714076132311867, mean total_u = 19.339713268991954, success = 0.27
+feedback : mean pos err = 0.010939735589842316, mean |theta err| = 0.037439127173228955, mean total_u = 31.358978118715587, success = 0.89
+=== LINE(seed=1234) Robustness ===
+open-loop: mean pos err = 0.02887764034137171, mean |theta err| = 0.24411341117574561, mean total_u = 15.983116661761464, success = 0.245
+feedback : mean pos err = 0.01178944890208936, mean |theta err| = 0.030427393797767977, mean total_u = 22.021785249995652, success = 0.905
+=== Running seed 2345 (N_MC=200) ===
