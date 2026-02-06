@@ -84,6 +84,13 @@ include("../src/models/line_planar_push/visuals.jl")
 path_line_planarpush = @get_scratch!("lineplanarpush")
 @load joinpath(path_line_planarpush, "residual.jld2") r_lpp_func rz_lpp_func rθ_lpp_func rz_lpp_array rθ_lpp_array
 
+# line planar push with translation
+include("../src/models/line_planar_push_xy/model.jl")
+include("../src/models/line_planar_push_xy/simulator.jl")
+include("../src/models/line_planar_push_xy/visuals.jl")
+path_line_planarpush_xy = @get_scratch!("lineplanarpush_xy")
+@load joinpath(path_line_planarpush_xy, "residual.jld2") r_lppxy_func rz_lppxy_func rθ_lppxy_func rz_lppxy_array rθ_lppxy_array
+
 # # rocket
 # include("../src/models/rocket/model.jl")
 # include("../src/models/rocket/simulator.jl")
@@ -99,7 +106,7 @@ export
     # acrobot_impact, acrobot_nominal,
     # cartpole_friction, cartpole_frictionless, 
     planarpush, 
-    fixedplanarpush, lineplanarpush
+    fixedplanarpush, lineplanarpush, lineplanarpush_xy
     # rocket, RocketInfo, f_rocket_proj, fx_rocket_proj, fu_rocket_proj, f_rocket, fx_rocket, fu_rocket
 
 export 
@@ -109,7 +116,8 @@ export
     # r_cartpole_frictionless_func, rz_cartpole_frictionless_func, rθ_cartpole_frictionless_func, rz_cartpole_frictionless_array, rθ_cartpole_frictionless_array,
     r_pp_func, rz_pp_func, rθ_pp_func, rz_pp_array, rθ_pp_array,
     r_fpp_func,rz_fpp_func, rθ_fpp_func, rz_fpp_array, rθ_fpp_array,
-    r_lpp_func,rz_lpp_func, rθ_lpp_func, rz_lpp_array, rθ_lpp_array
+    r_lpp_func,rz_lpp_func, rθ_lpp_func, rz_lpp_array, rθ_lpp_array,
+    r_lppxy_func,rz_lppxy_func, rθ_lppxy_func, rz_lppxy_array, rθ_lppxy_array
     # r_rocket_func, rz_rocket_func, rθ_rocket_func, rz_rocket_array, rθ_rocket_array,
     # r_proj_func, rz_proj_func, rθ_proj_func, rz_proj_array, rθ_proj_array
 

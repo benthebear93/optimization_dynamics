@@ -108,18 +108,18 @@ function f_debug(gamma, contact_vel, ip_z, ip_θ, model::ImplicitDynamics, x, u,
 	b = model.eval_sim.traj.b
 	ip_z_temp = model.eval_sim.ip.z
 	ip_θ_temp = model.eval_sim.ip.θ
-	for i=1:model.nc_impact
+	for i = 1:min(model.nc_impact, length(gamma), length(γ[1]))
 		gamma[i] = γ[1][i]
 	end
-	for i=1:10 - model.nc_impact
+	for i = 1:min(10 - model.nc_impact, length(contact_vel), length(b[1]))
 		contact_vel[i]= b[1][i]
 	end
 
-	for i=1:35
+	for i = 1:min(length(ip_z), length(ip_z_temp))
 		ip_z[i]= ip_z_temp[i]
 	end
 
-	for i=1:13
+	for i = 1:min(length(ip_θ), length(ip_θ_temp))
 		ip_θ[i]= ip_θ_temp[i]
 	end
 

@@ -7,25 +7,24 @@ const iLQR = OptimizationDynamics.IterativeLQR
 # ------------------------------
 # Configuration
 # ------------------------------
-MODE = :rotate  # :translate or :rotate
 GB = false
 SHOW_VIS = true
-RUN_DISTURBANCE = true
-PLOT_RESULTS = true
+RUN_DISTURBANCE = false
+PLOT_RESULTS = false
 SAVE_CSV = false
 
 h = 0.05
 T = 26
-num_w = 1
-nc = 2
-nc_impact = 2
+num_w = planarpush.nw
+nc = 1
+nc_impact = 1
 r_dim = 0.1
 
-rot_goal = [0.17453, 0.17453 * 2, 0.17453 * 3, 0.17453 * 4] # ~= 10deg, 20deg, 30deg
-uw_values = [0, 0.001, 0.0025, 0.005] # torque disturbance values
+θ_goal = 0.5
+x_goal = 0.3
+y_goal = 0.2
 
-test_number = 1
-
+uw_values = [0.0, 0.001, 0.0025, 0.005] # disturbance values
 test_num_w = 1
 DISTURBANCE_SCALE = 0.0
 
@@ -33,22 +32,22 @@ DISTURBANCE_SCALE = 0.0
 # Dynamics
 # ------------------------------
 im_dyn = ImplicitDynamics(
-    lineplanarpush,
+    planarpush,
     h,
-    eval(r_lpp_func),
-    eval(rz_lpp_func),
-    eval(rθ_lpp_func);
+    eval(r_pp_func),
+    eval(rz_pp_func),
+    eval(rθ_pp_func);
     r_tol=1.0e-8,
     κ_eval_tol=1.0e-4,
     κ_grad_tol=1.0e-2,
-    nc=2,
-    nb=10,
+    nc=1,
+    nb=9,
     d=num_w,
-    info=(GB ? GradientBundle(lineplanarpush, N=50, ϵ=1.0e-4) : nothing),
+    info=(GB ? GradientBundle(planarpush, N=50, ϵ=1.0e-4) : nothing),
 )
 
-nx = 2 * lineplanarpush.nq
-nu = lineplanarpush.nu
+nx = 2 * planarpush.nq
+nu = planarpush.nu
 
 ilqr_dyn = iLQR.Dynamics(
     (d, x, u, w) -> f(d, im_dyn, x, u, w),
@@ -68,34 +67,23 @@ ilqr_dyns = [ilqr_dyn for _ = 1:T-1]
 # ------------------------------
 # Initial conditions and goal
 # ------------------------------
-if MODE == :translate
-    q0 = [0.0, -r_dim - 1.0e-8, 0.0]
-    q1 = [0.0, -r_dim - 1.0e-8, 0.0]
-    θ_goal = 0.0 * π
-    qT = [θ_goal, -r_dim, -r_dim]
-    xT = [qT; qT]
-elseif MODE == :rotate
-    q0 = [0.0, -r_dim - 1.0e-8, 0.025, -r_dim - 1.0e-8, -0.025]
-    q1 = [0.0, -r_dim - 1.0e-8, 0.025, -r_dim - 1.0e-8, -0.025]
-    θ_goal = rot_goal[test_number]
-    qT = [θ_goal, -r_dim, -r_dim, -r_dim, -r_dim]
-    xT = [qT; qT]
-else
-    error("Unsupported MODE: $MODE")
-end
+q0 = [0.0, 0.0, 0.0, -r_dim - 1.0e-8, 0.0]
+q1 = [0.0, 0.0, 0.0, -r_dim - 1.0e-8, 0.0]
+qT = [x_goal, y_goal, θ_goal, x_goal - r_dim, y_goal - r_dim]
+xT = [qT; qT]
 
 x1 = [q0; q1]
 
 # ------------------------------
 # Objective
 # ------------------------------
-Qv = Diagonal([1.0, 0.1, 0.1, 0.1, 0.1])
-Qx = Diagonal([1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 0.1, 0.1, 0.1, 0.1])
+Qv = Diagonal([1.0, 1.0, 1.0, 0.1, 0.1])
+Qx = Diagonal([1.0, 1.0, 1.0, 0.1, 0.1, 1.0, 1.0, 1.0, 0.1, 0.1])
 Ru = 0.1
 ϕ_weight = 10.0
 
 function state_parts(x)
-    nq = lineplanarpush.nq
+    nq = planarpush.nq
     q1 = @views x[1:nq]
     q2 = @views x[nq .+ (1:nq)]
     v1 = (q2 - q1) ./ h
@@ -110,9 +98,8 @@ function objt(x, u, w)
     J += 0.5 * transpose(x - xT) * Qx * (x - xT)
     J += 0.5 * Ru * transpose(u) * u
 
-    ϕ = ϕ_func(lineplanarpush, q2)
+    ϕ = ϕ_func(planarpush, q2)
     J += 0.5 * ϕ_weight * ϕ[1]^2
-    J += 0.5 * ϕ_weight * ϕ[2]^2
 
     return J
 end
@@ -124,9 +111,8 @@ function objT(x, u, w)
     J += 0.5 * transpose(v1) * Qv * v1
     J += 0.5 * transpose(x - xT) * Qx * (x - xT)
 
-    ϕ = ϕ_func(lineplanarpush, q2)
+    ϕ = ϕ_func(planarpush, q2)
     J += 0.5 * ϕ[1]^2
-    J += 0.5 * ϕ[2]^2
 
     return J
 end
@@ -138,9 +124,8 @@ obj = [[ct for _ = 1:T-1]..., cT]
 # ------------------------------
 # Constraints
 # ------------------------------
-# Match total input budget to fixed_planar_push by halving per-point limits
-ul = [0.0; -2.5; 0.0; -2.5]
-uu = [2.5; 2.5; 2.5; 2.5]
+ul = [-5.0; -5.0]
+uu = [5.0; 5.0]
 
 function stage_con(x, u, w)
     [
@@ -151,7 +136,7 @@ end
 
 function terminal_con(x, u, w)
     [
-        (x - xT)[[1, 6]]; # goal
+        (x - xT)[[1, 2, 3, 6, 7, 8]]; # block x, y, θ
     ]
 end
 
@@ -164,19 +149,19 @@ cons = [[cont for _ = 1:T-1]..., conT]
 # ------------------------------
 function initial_control(t)
     if t < 5
-        return [0.5; 0.0; 0.75; 0.0]
+        return [1.0; 0.0]
     elseif t < 10
-        return [0.5; 0.0; 0.75; 0.0]
+        return [1.0; 0.0]
     elseif t < 20
-        return [0.05; 0.0; 0.05; 0.0]
+        return [0.1; 0.0]
     else
-        return [0.05; 0.05; 0.05; 0.05]
+        return [0.1; 0.1]
     end
 end
 
 ū = [initial_control(t) for t = 1:T-1]
 
-w = [[DISTURBANCE_SCALE * rand() * rand([-1, 1])] for _ = 1:T]
+w = [zeros(num_w) for _ = 1:T]
 
 x̄, gamma_hist = iLQR.rollout(ilqr_dyns, x1, ū, w)
 
@@ -224,7 +209,7 @@ q_sol = state_to_configuration(x_sol)
 # ------------------------------
 # Optional: disturbance evaluation
 # ------------------------------
-if RUN_DISTURBANCE
+if RUN_DISTURBANCE && num_w > 0
     Random.seed!(1234)
     uw = [[(uw_values[test_num_w] + 0.01 * rand()) * rand([-1, 1])] for _ = 1:T]
 
@@ -236,49 +221,43 @@ end
 # ------------------------------
 # Optional: plotting
 # ------------------------------
-if PLOT_RESULTS && RUN_DISTURBANCE
+if PLOT_RESULTS && RUN_DISTURBANCE && num_w > 0
     using Plots
 
-    θ_sol = [q_sol[i][1] for i in 1:T]
-    θ_dist = [q_dist[i][1] for i in 1:T]
+    θ_sol = [q_sol[i][3] for i in 1:T]
+    θ_dist = [q_dist[i][3] for i in 1:T]
     time = collect(0:h:(T-1) * h)
     θ_goal_line = fill(θ_goal, length(time))
 
     plot(time, θ_sol, label="actual_θ", linewidth=2, color=:green)
     plot!(time, θ_dist, label="dist_θ", linewidth=2, color=:red)
     plot!(time, θ_goal_line, label="goal_θ", linewidth=2, color=:black, linestyle=:dash)
-    title!("[line] θ with dist (θ_goal=$(rot_goal[test_number]), uw=$(uw_values[test_num_w]))")
+    title!("[planar] θ with dist (θ_goal=$(θ_goal), uw=$(uw_values[test_num_w]))")
     xlabel!("Time (s)")
     ylabel!("Rotation (rad)")
-    savefig("data/line_θ_goal_$(rot_goal[test_number])_$(uw_values[test_num_w]).png")
+    savefig("data/planar_θ_goal_$(θ_goal)_$(uw_values[test_num_w]).png")
 
     gamma_sol_vals = [gamma_actual[i][1] for i in 1:T-1]
-    gamma_sol_vals2 = [gamma_actual[i][2] for i in 1:T-1]
     gamma_hist_dist_vals = [gamma_hist_dist[i][1] for i in 1:T-1]
-    gamma_hist_dist_vals2 = [gamma_hist_dist[i][2] for i in 1:T-1]
     time_controls = collect(0:h:(T-2) * h)
 
     plot(time_controls, gamma_sol_vals .+ gamma_hist_dist_vals, label="γ_actual", linewidth=2, color=:green)
-    plot!(time_controls, gamma_hist_dist_vals .+ gamma_hist_dist_vals2, label="γ_dist", linewidth=2, color=:red)
-    title!("[line] Contact Force (θ_goal=$(rot_goal[test_number]), uw=$(uw_values[test_num_w]))")
+    plot!(time_controls, gamma_hist_dist_vals, label="γ_dist", linewidth=2, color=:red)
+    title!("[planar] Contact Force (θ_goal=$(θ_goal), uw=$(uw_values[test_num_w]))")
     xlabel!("Time (s)")
     ylabel!("Contact Force")
-    savefig("data/line_contact_force_$(rot_goal[test_number])_$(uw_values[test_num_w]).png")
+    savefig("data/planar_contact_force_$(θ_goal)_$(uw_values[test_num_w]).png")
 
     u1_vals = [u_sol[i][1] for i in 1:T-1]
     u2_vals = [u_sol[i][2] for i in 1:T-1]
-    u3_vals = [u_sol[i][3] for i in 1:T-1]
-    u4_vals = [u_sol[i][4] for i in 1:T-1]
     time_controls = collect(0:h:(T-2) * h)
 
     plot(time_controls, u1_vals, label="u_x1", linewidth=2, color=:blue)
     plot!(time_controls, u2_vals, label="u_y1", linewidth=2, color=:green)
-    plot!(time_controls, u3_vals, label="u_x2", linewidth=2, color=:blue, linestyle=:dash)
-    plot!(time_controls, u4_vals, label="u_y2", linewidth=2, color=:green, linestyle=:dash)
-    title!("[line] Control Inputs (θ_goal=$(rot_goal[test_number]))")
+    title!("[planar] Control Inputs (θ_goal=$(θ_goal))")
     xlabel!("Time (s)")
     ylabel!("Control Input")
-    savefig("data/line_control_inputs_$(rot_goal[test_number]).png")
+    savefig("data/planar_control_inputs_$(θ_goal).png")
 end
 
 # ------------------------------
@@ -287,7 +266,7 @@ end
 if SHOW_VIS
     vis = Visualizer()
     render(vis)
-    visualize!(vis, lineplanarpush, q_sol, Δt=h)
+    visualize!(vis, planarpush, q_sol, Δt=h)
 end
 
 # ------------------------------
