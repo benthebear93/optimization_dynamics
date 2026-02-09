@@ -7,12 +7,11 @@ const iLQR = OptimizationDynamics.IterativeLQR
 # ------------------------------
 # Configuration
 # ------------------------------
-MODE = :rotate  # :translate or :rotate
 GB = false
-SHOW_VIS = true
-RUN_DISTURBANCE = false
-PLOT_RESULTS = false
-SAVE_CSV = false
+SHOW_VIS = get(ENV, "POINT_PLANAR_SHOW_VIS", "true") == "true"
+RUN_DISTURBANCE = get(ENV, "POINT_PLANAR_RUN_DISTURBANCE", "false") == "true"
+PLOT_RESULTS = get(ENV, "POINT_PLANAR_PLOT_RESULTS", "false") == "true"
+SAVE_CSV = get(ENV, "POINT_PLANAR_SAVE_CSV", "false") == "true"
 
 h = 0.05
 T = 26
@@ -68,31 +67,28 @@ ilqr_dyns = [ilqr_dyn for _ = 1:T-1]
 # ------------------------------
 # Initial conditions and goal
 # ------------------------------
-if MODE == :translate
-    q0 = [0.0, -r_dim - 1.0e-8, 0.0]
-    q1 = [0.0, -r_dim - 1.0e-8, 0.0]
-    θ_goal = 0.0 * π
-    qT = [θ_goal, -r_dim, -r_dim]
-    xT = [qT; qT]
-elseif MODE == :rotate
-    q0 = [0.0, -r_dim - 1.0e-8, 0.0]
-    q1 = [0.0, -r_dim - 1.0e-8, 0.0]
-    θ_goal = rot_goal[test_number]
-    qT = [θ_goal, -r_dim, -r_dim]
-    xT = [qT; qT]
-else
-    error("Unsupported MODE: $MODE")
-end
+q0 = [0.0, -r_dim - 1.0e-8, 0.0]
+q1 = [0.0, -r_dim - 1.0e-8, 0.0]
+θ_goal = rot_goal[test_number]
+qT = [θ_goal, -r_dim, -r_dim]
+xT = zeros(2 * fixedplanarpush.nq)
+xT[1] = θ_goal
+xT[fixedplanarpush.nq + 1] = θ_goal
 
 x1 = [q0; q1]
 
 # ------------------------------
 # Objective
 # ------------------------------
-Qv = Diagonal([1.0, 0.1, 0.1])
-Qx = Diagonal([1.0, 0.1, 0.1, 1.0, 0.1, 0.1])
+Qv = Diagonal([1.0, 0.0, 0.0])
+Qx = Diagonal([1.0, 0.0, 0.0, 1.0, 0.0, 0.0])
 Ru = 0.1
-ϕ_weight = 10.0
+ϕ_weight = 200.0
+slip_weight = 1.0
+
+function rot2(θ)
+    [cos(θ) -sin(θ); sin(θ) cos(θ)]
+end
 
 function state_parts(x)
     nq = fixedplanarpush.nq
@@ -103,7 +99,7 @@ function state_parts(x)
 end
 
 function objt(x, u, w)
-    _, q2, v1 = state_parts(x)
+    q1, q2, v1 = state_parts(x)
 
     J = 0.0
     J += 0.5 * transpose(v1) * Qv * v1
@@ -112,6 +108,10 @@ function objt(x, u, w)
 
     ϕ = ϕ_func(fixedplanarpush, q2)
     J += 0.5 * ϕ_weight * ϕ[1]^2
+    p1_local = transpose(rot2(q1[1])) * q1[2:3]
+    p2_local = transpose(rot2(q2[1])) * q2[2:3]
+    slip_vel = (p2_local[2] - p1_local[2]) / h
+    J += 0.5 * slip_weight * slip_vel^2
 
     return J
 end
@@ -136,7 +136,7 @@ obj = [[ct for _ = 1:T-1]..., cT]
 # ------------------------------
 # Constraints
 # ------------------------------
-ul = [0.0; -5.0]
+ul = [-5.0; -5.0]
 uu = [5.0; 5.0]
 
 function stage_con(x, u, w)
@@ -148,7 +148,7 @@ end
 
 function terminal_con(x, u, w)
     [
-        (x - xT)[[1, 4]]; # goal
+        (x - xT)[[4]]; # goal
     ]
 end
 
@@ -163,11 +163,11 @@ function initial_control(t)
     if t < 5
         return [1.0; 0.0]
     elseif t < 10
-        return [1.0; 0.0]
+        return [0.0; 0.0]
     elseif t < 20
-        return [0.1; 0.0]
+        return [0.0; 0.0]
     else
-        return [0.1; 0.1]
+        return [0.0; 0.0]
     end
 end
 
@@ -218,6 +218,14 @@ x_sol, u_sol = iLQR.get_trajectory(solver)
 gamma_sol = iLQR.get_contact_force(solver)
 q_sol = state_to_configuration(x_sol)
 
+theta_goal = qT[1]
+theta_final = q_sol[end][1]
+theta_err = theta_final - theta_goal
+println("theta_goal        = ", theta_goal)
+println("theta_final       = ", theta_final)
+println("theta_err         = ", theta_err)
+println("theta_err_abs     = ", abs(theta_err))
+
 # ------------------------------
 # Optional: disturbance evaluation
 # ------------------------------
@@ -253,8 +261,9 @@ if PLOT_RESULTS && RUN_DISTURBANCE
     gamma_hist_dist_vals = [gamma_hist_dist[i][1] for i in 1:T-1]
     time_controls = collect(0:h:(T-2) * h)
 
-    plot(time_controls, gamma_sol_vals .+ gamma_hist_dist_vals, label="γ_actual", linewidth=2, color=:green)
-    plot!(time_controls, gamma_hist_dist_vals, label="γ_dist", linewidth=2, color=:red)
+    # NOTE: This is an instantaneous (per-time-step) sum, not a cumulative sum over time.
+    plot(time_controls, gamma_sol_vals .+ gamma_hist_dist_vals, label="γ_actual_sum", linewidth=2, color=:green)
+    plot!(time_controls, gamma_hist_dist_vals, label="γ_dist_sum", linewidth=2, color=:red)
     title!("[fixed] Contact Force (θ_goal=$(rot_goal[test_number]), uw=$(uw_values[test_num_w]))")
     xlabel!("Time (s)")
     ylabel!("Contact Force")

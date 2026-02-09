@@ -98,11 +98,28 @@ obj = [[ct for t = 1:T-1]..., cT];
 # ## constraints
 ul = [-5.0; -5.0]
 uu = [5.0; 5.0]
+max_pusher_gap = 0.0001
+max_tangent_slip = 0.005
+pusher_y_ref = q0[5] - q0[2]
+
+function rot2(θ)
+    [cos(θ) -sin(θ); sin(θ) cos(θ)]
+end
 
 function stage_con(x, u, w) 
+    nq = planarpush.nq
+    q2 = @views x[nq .+ (1:nq)]
+    ϕ = ϕ_func(planarpush, q2)
+    p_block = q2[1:2]
+    Rwb = rot2(q2[3])
+    p_local = transpose(Rwb) * (q2[4:5] - p_block)
+    slip = p_local[2] - pusher_y_ref
     [
      ul - u; # control limit (lower)
      u - uu; # control limit (upper)
+     ϕ[1] - max_pusher_gap; # keep pusher near the box
+     slip - max_tangent_slip; # tangent slip upper bound
+     -slip - max_tangent_slip; # tangent slip lower bound
     ]
 end 
 
@@ -112,7 +129,7 @@ function terminal_con(x, u, w)
     ]
 end
 
-cont = iLQR.Constraint(stage_con, nx, nu, idx_ineq=collect(1:(2 * nu)))
+cont = iLQR.Constraint(stage_con, nx, nu, idx_ineq=collect(1:(2 * nu + 3)))
 conT = iLQR.Constraint(terminal_con, nx, 0)
 cons = [[cont for t = 1:T-1]..., conT];
 

@@ -11,22 +11,22 @@ const iLQR = OptimizationDynamics.IterativeLQR
 GB = false
 SHOW_VIS = true
 RUN_DISTURBANCE = false
-PLOT_RESULTS = false
+PLOT_RESULTS = true
 PLOT_DIAGNOSTICS = true
 SAVE_CSV = false
 SOLVER_VERBOSE = false
 
 h = 0.05
-T = 26
+T = 20
 num_w = lineplanarpush_xy.nw
 nc = 2
 nc_impact = 2
 r_dim = 0.1
 pusher_y_offset = 0.025
 
-x_goal = 0.3
-y_goal = 0.2
-θ_goal = 0.8
+x_goal = 0.5
+y_goal = 0.1
+θ_goal = 1.1
 
 uw_values = [0, 0.001, 0.0025, 0.005] # disturbance values
 
@@ -87,6 +87,23 @@ Qx = Diagonal([1.0, 1.0, 1.0, 0.1, 0.1, 0.1, 0.1, 1.0, 1.0, 1.0, 0.1, 0.1, 0.1, 
 Ru = 0.1
 ϕ_weight = 10.0
 Wp_move = Diagonal([1.0, 1.0, 1.0, 1.0]) # pusher step-to-step movement penalty
+γ_balance_weight = 0.3
+
+# Diagnostic helper: evaluate current normal contact forces.
+const _dyn_eval_buf = zeros(nx)
+const _empty_dbg_vec = zeros(0)
+const _gamma_obj_buf = zeros(nc_impact)
+function eval_gamma_contacts!(γ_out, x, u, w)
+    f(_dyn_eval_buf, im_dyn, x, u, w)
+    f_debug(γ_out, _empty_dbg_vec, _empty_dbg_vec, _empty_dbg_vec, im_dyn, x, u, w)
+    return γ_out
+end
+
+function eval_contact_data!(γ_out, b_out, x, u, w)
+    f(_dyn_eval_buf, im_dyn, x, u, w)
+    f_debug(γ_out, b_out, _empty_dbg_vec, _empty_dbg_vec, im_dyn, x, u, w)
+    return γ_out, b_out
+end
 
 function state_parts(x)
     nq = lineplanarpush_xy.nq
@@ -109,6 +126,11 @@ function objt(x, u, w)
     ϕ = ϕ_func(lineplanarpush_xy, q2)
     J += 0.5 * ϕ_weight * ϕ[1]^2
     J += 0.5 * ϕ_weight * ϕ[2]^2
+    # Encourage both contacts to share load without hard-enforcing min normal force.
+    if x isa Vector{Float64} && u isa Vector{Float64} && w isa Vector{Float64}
+        γ = eval_gamma_contacts!(_gamma_obj_buf, x, u, w)
+        J += 0.5 * γ_balance_weight * (γ[1] - γ[2])^2
+    end
 
     return J
 end
@@ -134,34 +156,36 @@ obj = [[ct for _ = 1:T-1]..., cT]
 # ------------------------------
 # Constraints
 # ------------------------------
-ul = [-2.5; -2.5; -2.5; -2.5]
-uu = [2.5; 2.5; 2.5; 2.5]
+ul = [-2.0; -2.0; -2.0; -2.0]
+uu = [2.0; 2.0; 2.0; 2.0]
 max_pusher_gap = 0.0001
-max_tangent_slip = 0.005
+max_tangent_slip_vel = 0.003
 
 function rot2(θ)
     [cos(θ) -sin(θ); sin(θ) cos(θ)]
 end
 
 function stage_con(x, u, w)
-    _, q2, _ = state_parts(x)
+    q1, q2, _ = state_parts(x)
     ϕ = ϕ_func(lineplanarpush_xy, q2)
-    p_block = q2[1:2]
-    Rwb = rot2(q2[3])
-    p1_local = transpose(Rwb) * (q2[4:5] - p_block)
-    p2_local = transpose(Rwb) * (q2[6:7] - p_block)
-    slip1 = p1_local[2] - pusher_y_offset
-    slip2 = p2_local[2] + pusher_y_offset
+    p_block1 = q1[1:2]
+    p_block2 = q2[1:2]
+    p11_local = transpose(rot2(q1[3])) * (q1[4:5] - p_block1)
+    p12_local = transpose(rot2(q1[3])) * (q1[6:7] - p_block1)
+    p21_local = transpose(rot2(q2[3])) * (q2[4:5] - p_block2)
+    p22_local = transpose(rot2(q2[3])) * (q2[6:7] - p_block2)
+    slip_vel1 = (p21_local[2] - p11_local[2]) / h
+    slip_vel2 = (p22_local[2] - p12_local[2]) / h
 
     [
         ul - u; # control limit (lower)
         u - uu; # control limit (upper)
         ϕ[1] - max_pusher_gap; # keep pusher 1 near the box
         ϕ[2] - max_pusher_gap; # keep pusher 2 near the box
-        slip1 - max_tangent_slip;
-        -slip1 - max_tangent_slip;
-        slip2 - max_tangent_slip;
-        -slip2 - max_tangent_slip;
+        slip_vel1 - max_tangent_slip_vel;
+        -slip_vel1 - max_tangent_slip_vel;
+        slip_vel2 - max_tangent_slip_vel;
+        -slip_vel2 - max_tangent_slip_vel;
     ]
 end
 
@@ -180,9 +204,9 @@ cons = [[cont for _ = 1:T-1]..., conT]
 # ------------------------------
 function initial_control(t)
     if t < 5
-        return [0.5; 0.0; 0.75; 0.0]
+        return [0.5; 0.0; 0.5; 0.0]
     elseif t < 10
-        return [0.5; 0.0; 0.75; 0.0]
+        return [0.5; 0.0; 0.5; 0.0]
     elseif t < 20
         return [0.05; 0.0; 0.05; 0.0]
     else
@@ -194,7 +218,7 @@ ū = [initial_control(t) for t = 1:T-1]
 
 w = [[DISTURBANCE_SCALE * rand() * rand([-1, 1])] for _ = 1:T]
 
-x̄, gamma_hist = iLQR.rollout(ilqr_dyns, x1, ū, w)
+x̄, _ = iLQR.rollout(ilqr_dyns, x1, ū, w)
 
 # ------------------------------
 # Solver
@@ -208,8 +232,8 @@ solver = iLQR.solver(
         α_min=1.0e-5,
         obj_tol=1.0e-3,
         grad_tol=1.0e-3,
-        max_iter=10,
-        max_al_iter=20,
+        max_iter=20,
+        max_al_iter=30,
         con_tol=0.005,
         ρ_init=1.0,
         ρ_scale=10.0,
@@ -234,8 +258,9 @@ iLQR.reset!(solver.s_data)
 # Solution
 # ------------------------------
 x_sol, u_sol = iLQR.get_trajectory(solver)
-gamma_sol = iLQR.get_contact_force(solver)
-q_sol = state_to_configuration(x_sol)
+# Re-rollout with optimized controls to get consistent contact force history.
+x_eval, gamma_sol = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
+q_sol = state_to_configuration(x_eval)
 
 box_goal = qT[1:2]
 box_final = q_sol[end][1:2]
@@ -251,26 +276,38 @@ gamma_diff_vals = gamma1_vals - gamma2_vals
 gamma1_mean_abs = sum(abs.(gamma1_vals)) / length(gamma1_vals)
 gamma2_mean_abs = sum(abs.(gamma2_vals)) / length(gamma2_vals)
 gamma_diff_peak = maximum(abs.(gamma_diff_vals))
+gamma_eps = 1.0e-4
+gamma1_min = minimum(gamma1_vals)
+gamma1_max = maximum(gamma1_vals)
+gamma2_min = minimum(gamma2_vals)
+gamma2_max = maximum(gamma2_vals)
+gamma1_active_ratio = count(>(gamma_eps), gamma1_vals) / length(gamma1_vals)
+gamma2_active_ratio = count(>(gamma_eps), gamma2_vals) / length(gamma2_vals)
 tau_proxy_hist = Float64[]
-slip1_hist = Float64[]
-slip2_hist = Float64[]
+slip_vel1_hist = Float64[]
+slip_vel2_hist = Float64[]
 for t in 1:length(u_sol)
+    q_prev = q_sol[t]
     q = q_sol[t + 1]
+    p_block_prev = q_prev[1:2]
     p_block = q[1:2]
+    Rwb_prev = rot2(q_prev[3])
     Rwb = rot2(q[3])
+    p1_local_prev = transpose(Rwb_prev) * (q_prev[4:5] - p_block_prev)
+    p2_local_prev = transpose(Rwb_prev) * (q_prev[6:7] - p_block_prev)
     p1_local = transpose(Rwb) * (q[4:5] - p_block)
     p2_local = transpose(Rwb) * (q[6:7] - p_block)
     γt1 = gamma_comp(gamma_sol[t], 1)
     γt2 = gamma_comp(gamma_sol[t], 2)
     push!(tau_proxy_hist, -(p1_local[2] * γt1 + p2_local[2] * γt2))
-    push!(slip1_hist, p1_local[2] - pusher_y_offset)
-    push!(slip2_hist, p2_local[2] + pusher_y_offset)
+    push!(slip_vel1_hist, (p1_local[2] - p1_local_prev[2]) / h)
+    push!(slip_vel2_hist, (p2_local[2] - p2_local_prev[2]) / h)
 end
 tau_proxy_peak = maximum(abs.(tau_proxy_hist))
-slip1_max_abs = maximum(abs.(slip1_hist))
-slip2_max_abs = maximum(abs.(slip2_hist))
+slip1_max_abs = maximum(abs.(slip_vel1_hist))
+slip2_max_abs = maximum(abs.(slip_vel2_hist))
 slip_max_abs = max(slip1_max_abs, slip2_max_abs)
-slip_margin_to_bound = max_tangent_slip - slip_max_abs
+slip_margin_to_bound = max_tangent_slip_vel - slip_max_abs
 @show box_goal
 @show box_final
 @show box_pos_err
@@ -282,6 +319,12 @@ slip_margin_to_bound = max_tangent_slip - slip_max_abs
 @show gamma1_mean_abs
 @show gamma2_mean_abs
 @show gamma_diff_peak
+@show gamma1_min
+@show gamma1_max
+@show gamma2_min
+@show gamma2_max
+@show gamma1_active_ratio
+@show gamma2_active_ratio
 @show tau_proxy_peak
 @show slip1_max_abs
 @show slip2_max_abs
@@ -304,10 +347,10 @@ if PLOT_DIAGNOSTICS
     gamma_diff_plot = gamma_diff_vals[1:n_ctrl]
     tau_plot = tau_proxy_hist[1:n_ctrl]
     u_norm_plot = u_norm_hist[1:n_ctrl]
-    n_slip = minimum((length(time_controls), length(slip1_hist), length(slip2_hist)))
+    n_slip = minimum((length(time_controls), length(slip_vel1_hist), length(slip_vel2_hist)))
     t_slip = time_controls[1:n_slip]
-    slip1_plot = slip1_hist[1:n_slip]
-    slip2_plot = slip2_hist[1:n_slip]
+    slip1_plot = slip_vel1_hist[1:n_slip]
+    slip2_plot = slip_vel2_hist[1:n_slip]
 
     p1 = plot(t_state, θ_plot, label="theta", linewidth=2, color=:blue)
     plot!(p1, t_state, θ_goal_line, label="theta_goal", linewidth=2, color=:black, linestyle=:dash)
@@ -320,10 +363,19 @@ if PLOT_DIAGNOSTICS
     plot!(p2, t_ctrl, u_norm_plot, label="u_norm", linewidth=2, color=:blue)
     savefig(p2, "data/line_diag_force_tau_u.png")
 
-    slip_ub = fill(max_tangent_slip, n_slip)
-    slip_lb = fill(-max_tangent_slip, n_slip)
-    p3 = plot(t_slip, slip1_plot, label="slip1", linewidth=2, color=:magenta)
-    plot!(p3, t_slip, slip2_plot, label="slip2", linewidth=2, color=:purple)
+    gamma_sum_plot = gamma1_plot .+ gamma2_plot
+    p_gamma = plot(t_ctrl, gamma1_plot, label="gamma1", linewidth=2, color=:green)
+    plot!(p_gamma, t_ctrl, gamma2_plot, label="gamma2", linewidth=2, color=:olive)
+    plot!(p_gamma, t_ctrl, gamma_sum_plot, label="gamma_sum", linewidth=2, color=:black, linestyle=:dash)
+    title!(p_gamma, "Line Contact Normal Force (gamma)")
+    xlabel!(p_gamma, "Time (s)")
+    ylabel!(p_gamma, "Normal force")
+    savefig(p_gamma, "data/line_diag_gamma.png")
+
+    slip_ub = fill(max_tangent_slip_vel, n_slip)
+    slip_lb = fill(-max_tangent_slip_vel, n_slip)
+    p3 = plot(t_slip, slip1_plot, label="slip_vel1", linewidth=2, color=:magenta)
+    plot!(p3, t_slip, slip2_plot, label="slip_vel2", linewidth=2, color=:purple)
     plot!(p3, t_slip, slip_ub, label="slip_ub", linewidth=2, color=:black, linestyle=:dash)
     plot!(p3, t_slip, slip_lb, label="slip_lb", linewidth=2, color=:black, linestyle=:dash)
     savefig(p3, "data/line_diag_slip.png")
@@ -336,7 +388,7 @@ if RUN_DISTURBANCE && num_w > 0
     Random.seed!(1234)
     uw = [[(uw_values[test_num_w] + 0.01 * rand()) * rand([-1, 1])] for _ = 1:T]
 
-    x_temp, gamma_actual = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
+    _, gamma_actual = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
     x_dist, gamma_hist_dist = iLQR.rollout(ilqr_dyns, x1, u_sol, uw)
     q_dist = state_to_configuration(x_dist)
 end

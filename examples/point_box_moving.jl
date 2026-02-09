@@ -16,15 +16,15 @@ PLOT_DIAGNOSTICS = true
 SAVE_CSV = false
 
 h = 0.05
-T = 26
+T = 20
 num_w = planarpush.nw
 nc = 1
 nc_impact = 1
 r_dim = 0.1
 
-x_goal = 0.3
-y_goal = 0.2
-θ_goal = 0.8
+x_goal = 0.5
+y_goal = 0.3
+θ_goal = 1.1
 
 uw_values = [0.0, 0.001, 0.0025, 0.005] # disturbance values
 test_num_w = 1
@@ -85,6 +85,15 @@ Ru = 0.1
 ϕ_weight = 10.0
 Wp_move = Diagonal([1.0, 1.0]) # pusher step-to-step movement penalty
 
+# Diagnostic helper: evaluate normal force and contact tangential impulses.
+const _dyn_eval_buf = zeros(nx)
+const _empty_dbg_vec = zeros(0)
+function eval_contact_data!(γ_out, b_out, x, u, w)
+    f(_dyn_eval_buf, im_dyn, x, u, w)
+    f_debug(γ_out, b_out, _empty_dbg_vec, _empty_dbg_vec, im_dyn, x, u, w)
+    return γ_out, b_out
+end
+
 function state_parts(x)
     nq = planarpush.nq
     q1 = @views x[1:nq]
@@ -129,30 +138,30 @@ obj = [[ct for _ = 1:T-1]..., cT]
 # ------------------------------
 # Constraints
 # ------------------------------
-ul = [-5.0; -5.0]
-uu = [5.0; 5.0]
+ul = [-4.0; -4.0]
+uu = [4.0; 4.0]
 max_pusher_gap = 0.0001
-max_tangent_slip = 0.005
-pusher_y_ref = 0.0
+max_tangent_slip_vel = 0.003
 
 function rot2(θ)
     [cos(θ) -sin(θ); sin(θ) cos(θ)]
 end
 
 function stage_con(x, u, w)
-    _, q2, _ = state_parts(x)
+    q1, q2, _ = state_parts(x)
     ϕ = ϕ_func(planarpush, q2)
-    p_block = q2[1:2]
-    Rwb = rot2(q2[3])
-    p_local = transpose(Rwb) * (q2[4:5] - p_block)
-    slip = p_local[2] - pusher_y_ref
+    p_block1 = q1[1:2]
+    p_block2 = q2[1:2]
+    p1_local = transpose(rot2(q1[3])) * (q1[4:5] - p_block1)
+    p2_local = transpose(rot2(q2[3])) * (q2[4:5] - p_block2)
+    slip_vel = (p2_local[2] - p1_local[2]) / h
 
     [
         ul - u; # control limit (lower)
         u - uu; # control limit (upper)
         ϕ[1] - max_pusher_gap; # keep pusher near the box (no large separation)
-        slip - max_tangent_slip;
-        -slip - max_tangent_slip;
+        slip_vel - max_tangent_slip_vel;
+        -slip_vel - max_tangent_slip_vel;
     ]
 end
 
@@ -185,7 +194,7 @@ ū = [initial_control(t) for t = 1:T-1]
 
 w = [zeros(num_w) for _ = 1:T]
 
-x̄, gamma_hist = iLQR.rollout(ilqr_dyns, x1, ū, w)
+x̄, _ = iLQR.rollout(ilqr_dyns, x1, ū, w)
 
 # ------------------------------
 # Solver
@@ -199,8 +208,8 @@ solver = iLQR.solver(
         α_min=1.0e-5,
         obj_tol=1.0e-3,
         grad_tol=1.0e-3,
-        max_iter=10,
-        max_al_iter=20,
+        max_iter=20,
+        max_al_iter=30,
         con_tol=0.005,
         ρ_init=1.0,
         ρ_scale=10.0,
@@ -245,9 +254,16 @@ for t in 1:length(u_sol)
     push!(tau_proxy_hist, -p_local[2] * gamma_sol[t][1])
 end
 tau_proxy_peak = maximum(abs.(tau_proxy_hist))
-slip_hist = [(transpose(rot2(q[3])) * (q[4:5] - q[1:2]))[2] - pusher_y_ref for q in q_sol]
-slip_max_abs = maximum(abs.(slip_hist))
-slip_margin_to_bound = max_tangent_slip - slip_max_abs
+slip_vel_hist = Float64[]
+for t in 1:length(u_sol)
+    q_prev = q_sol[t]
+    q_curr = q_sol[t + 1]
+    p_prev = transpose(rot2(q_prev[3])) * (q_prev[4:5] - q_prev[1:2])
+    p_curr = transpose(rot2(q_curr[3])) * (q_curr[4:5] - q_curr[1:2])
+    push!(slip_vel_hist, (p_curr[2] - p_prev[2]) / h)
+end
+slip_max_abs = maximum(abs.(slip_vel_hist))
+slip_margin_to_bound = max_tangent_slip_vel - slip_max_abs
 @show box_goal
 @show box_final
 @show box_pos_err
@@ -287,12 +303,12 @@ if PLOT_DIAGNOSTICS
     plot!(p2, t_ctrl, u_norm_plot, label="u_norm", linewidth=2, color=:blue)
     savefig(p2, "data/point_diag_force_tau_u.png")
 
-    n_slip = minimum((length(time_states), length(slip_hist)))
-    t_slip = time_states[1:n_slip]
-    slip_plot = slip_hist[1:n_slip]
-    slip_ub = fill(max_tangent_slip, n_slip)
-    slip_lb = fill(-max_tangent_slip, n_slip)
-    p3 = plot(t_slip, slip_plot, label="slip", linewidth=2, color=:magenta)
+    n_slip = minimum((length(time_controls), length(slip_vel_hist)))
+    t_slip = time_controls[1:n_slip]
+    slip_plot = slip_vel_hist[1:n_slip]
+    slip_ub = fill(max_tangent_slip_vel, n_slip)
+    slip_lb = fill(-max_tangent_slip_vel, n_slip)
+    p3 = plot(t_slip, slip_plot, label="slip_vel", linewidth=2, color=:magenta)
     plot!(p3, t_slip, slip_ub, label="slip_ub", linewidth=2, color=:black, linestyle=:dash)
     plot!(p3, t_slip, slip_lb, label="slip_lb", linewidth=2, color=:black, linestyle=:dash)
     savefig(p3, "data/point_diag_slip.png")
@@ -305,7 +321,7 @@ if RUN_DISTURBANCE && num_w > 0
     Random.seed!(1234)
     uw = [[(uw_values[test_num_w] + 0.01 * rand()) * rand([-1, 1])] for _ = 1:T]
 
-    x_temp, gamma_actual = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
+    _, gamma_actual = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
     x_dist, gamma_hist_dist = iLQR.rollout(ilqr_dyns, x1, u_sol, uw)
     q_dist = state_to_configuration(x_dist)
 end
