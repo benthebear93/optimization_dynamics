@@ -15,14 +15,15 @@ function RoboDojo.indices_z(model::TipOverPush)
 end
 
 function RoboDojo.nominal_configuration(model::TipOverPush)
+    box_center_z = model.box_half_height + 1.0e-8
     [
         0.0,
         0.0,
-        model.box_half_height + 1.0e-8,
+        box_center_z,
         0.0,
         -model.box_half_width - model.pusher_radius - model.pusher_gap,
         0.0,
-        model.pusher_height,
+        box_center_z,
     ]
 end
 

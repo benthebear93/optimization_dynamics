@@ -1,6 +1,8 @@
 using OptimizationDynamics
 using LinearAlgebra
 using Random
+using JSON3
+using OrderedCollections: OrderedDict
 ENV["GKSwstype"] = "100"
 
 const iLQR = OptimizationDynamics.IterativeLQR
@@ -14,9 +16,10 @@ RUN_DISTURBANCE = false
 PLOT_RESULTS = false
 PLOT_DIAGNOSTICS = true
 SAVE_CSV = false
+POINT_BOX_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "point_box_ref_traj.json")
 
 h = 0.05
-T = 20
+T = 15
 num_w = planarpush.nw
 nc = 1
 nc_impact = 1
@@ -171,6 +174,74 @@ function terminal_con(x, u, w)
     ]
 end
 
+function write_point_box_ref_traj_json(
+    out_file::String,
+    q_sol,
+    u_sol,
+    w_sol,
+    gamma_hist,
+    b_hist,
+    z_hist,
+    theta_hist,
+    h::Float64,
+    nq::Int,
+    nu::Int,
+    nw::Int,
+)
+    H = length(u_sol)
+    q = [Vector{Float64}(q_sol[t]) for t in 1:H]
+    u = [Vector{Float64}(u_sol[t]) for t in 1:H]
+    w = [Vector{Float64}(w_sol[t]) for t in 1:H]
+    gamma = [Vector{Float64}(gamma_hist[t]) for t in 1:H]
+    b = [Vector{Float64}(b_hist[t]) for t in 1:H]
+    z = [Vector{Float64}(z_hist[t]) for t in 1:H]
+    theta = [Vector{Float64}(theta_hist[t]) for t in 1:H]
+
+    nc = isempty(gamma) ? 0 : length(gamma[1])
+    nb = isempty(b) ? 0 : length(b[1])
+    nz = isempty(z) ? 0 : length(z[1])
+    ntheta = isempty(theta) ? 0 : length(theta[1])
+
+    iq0 = collect(1:nq)
+    iq1 = collect(nq .+ (1:nq))
+    iu1 = collect(2 * nq .+ (1:nu))
+    iw1 = collect(2 * nq + nu .+ (1:nw))
+    iq2 = collect(1:nq)
+    igamma1 = collect(nq .+ (1:nc))
+    ib1 = collect(nq + nc .+ (1:nb))
+
+    od = OrderedDict{String, Any}()
+    od["H"] = H
+    od["h"] = h
+    od["kappa"] = fill(2.0e-8, H)
+    od["q"] = q
+    od["u"] = u
+    od["w"] = w
+    od["gamma"] = gamma
+    od["b"] = b
+    od["z"] = z
+    od["theta"] = theta
+    od["iq0"] = iq0
+    od["iq1"] = iq1
+    od["iu1"] = iu1
+    od["iw1"] = iw1
+    od["iq2"] = iq2
+    od["igamma1"] = igamma1
+    od["ib1"] = ib1
+    od["nq"] = nq
+    od["nu"] = nu
+    od["nw"] = nw
+    od["nc"] = nc
+    od["nb"] = nb
+    od["nz"] = nz
+    od["nθ"] = ntheta
+
+    open(out_file, "w") do io
+        JSON3.write(io, od)
+    end
+    return nothing
+end
+
 cont = iLQR.Constraint(stage_con, nx, nu, idx_ineq=collect(1:(2 * nu + 3)))
 conT = iLQR.Constraint(terminal_con, nx, 0)
 cons = [[cont for _ = 1:T-1]..., conT]
@@ -234,8 +305,24 @@ iLQR.reset!(solver.s_data)
 # Solution
 # ------------------------------
 x_sol, u_sol = iLQR.get_trajectory(solver)
-gamma_sol = iLQR.get_contact_force(solver)
 q_sol = state_to_configuration(x_sol)
+_, gamma_hist_ref, b_hist_ref, z_hist_ref, theta_hist_ref = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
+
+write_point_box_ref_traj_json(
+    POINT_BOX_REF_TRAJ_FILE,
+    q_sol,
+    u_sol,
+    w,
+    gamma_hist_ref,
+    b_hist_ref,
+    z_hist_ref,
+    theta_hist_ref,
+    h,
+    planarpush.nq,
+    planarpush.nu,
+    planarpush.nw,
+)
+println("saved reference json: " * POINT_BOX_REF_TRAJ_FILE)
 
 box_goal = qT[1:2]
 box_final = q_sol[end][1:2]
@@ -244,14 +331,22 @@ box_pos_err = box_final - box_goal
 θ_final = q_sol[end][3]
 θ_err = θ_final - θ_goal_eval
 control_effort = sum(dot(u, u) for u in u_sol)
-gamma_vals = [γ[1] for γ in gamma_sol]
+# NOTE: get_contact_force(solver) can remain zero if backend solver data gamma buffer
+# is not populated during rollout. Recompute gamma directly from debug dynamics.
+gamma_vals = Float64[]
+γ_tmp = zeros(nc)
+b_tmp = zeros(9)
+for t in 1:length(u_sol)
+    eval_contact_data!(γ_tmp, b_tmp, x_sol[t], u_sol[t], w[t])
+    push!(gamma_vals, γ_tmp[1])
+end
 gamma_peak = maximum(abs.(gamma_vals))
 gamma_mean_abs = sum(abs.(gamma_vals)) / length(gamma_vals)
 tau_proxy_hist = Float64[]
 for t in 1:length(u_sol)
     q = q_sol[t + 1]
     p_local = transpose(rot2(q[3])) * (q[4:5] - q[1:2])
-    push!(tau_proxy_hist, -p_local[2] * gamma_sol[t][1])
+    push!(tau_proxy_hist, -p_local[2] * gamma_vals[t])
 end
 tau_proxy_peak = maximum(abs.(tau_proxy_hist))
 slip_vel_hist = Float64[]
@@ -297,6 +392,11 @@ if PLOT_DIAGNOSTICS
     p1 = plot(t_state, θ_plot, label="theta", linewidth=2, color=:blue)
     plot!(p1, t_state, θ_goal_line, label="theta_goal", linewidth=2, color=:black, linestyle=:dash)
     savefig(p1, "data/point_diag_theta.png")
+
+    p2_gamma = plot(t_ctrl, gamma_plot, label="gamma", linewidth=2, color=:green)
+    xlabel!(p2_gamma, "Time (s)")
+    ylabel!(p2_gamma, "Contact Force")
+    savefig(p2_gamma, "data/point_diag_gamma.png")
 
     p2 = plot(t_ctrl, gamma_plot, label="gamma", linewidth=2, color=:green)
     plot!(p2, t_ctrl, tau_plot, label="tau_proxy", linewidth=2, color=:red)

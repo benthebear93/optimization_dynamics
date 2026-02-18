@@ -7,18 +7,8 @@ end
 
 function _create_tipover_push!(vis, model::TipOverPush;
         i = 1,
-        floor_len = 2.0,
-        floor_depth = 0.08,
         box_color = OptimizationDynamics.Colors.RGBA(0.494, 0.863, 0.604, 1.0),
-        floor_color = OptimizationDynamics.Colors.RGBA(0.6, 0.6, 0.6, 1.0),
         pusher_color = OptimizationDynamics.Colors.RGBA(0.91, 0.3, 0.24, 0.95))
-
-    OptimizationDynamics.MeshCat.setobject!(vis["floor_$i"],
-        OptimizationDynamics.GeometryBasics.Rect(
-            OptimizationDynamics.GeometryBasics.Vec(-0.5 * floor_len, -0.5 * floor_depth, -0.01),
-            OptimizationDynamics.GeometryBasics.Vec(floor_len, floor_depth, 0.02),
-        ),
-        OptimizationDynamics.MeshCat.MeshPhongMaterial(color = floor_color))
 
     OptimizationDynamics.MeshCat.setobject!(vis["box_$i"],
         OptimizationDynamics.GeometryBasics.Rect(
@@ -33,7 +23,6 @@ function _create_tipover_push!(vis, model::TipOverPush;
 end
 
 function _set_tipover_push!(vis, model::TipOverPush, q; i = 1)
-    OptimizationDynamics.MeshCat.settransform!(vis["floor_$i"], OptimizationDynamics.CoordinateTransformations.Translation(0.0, 0.0, 0.0))
     OptimizationDynamics.MeshCat.settransform!(vis["box_$i"],
         OptimizationDynamics.CoordinateTransformations.compose(
             OptimizationDynamics.CoordinateTransformations.Translation(q[1], 0.0, q[3]),

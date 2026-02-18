@@ -14,7 +14,7 @@ PLOT_RESULTS = get(ENV, "POINT_PLANAR_PLOT_RESULTS", "false") == "true"
 SAVE_CSV = get(ENV, "POINT_PLANAR_SAVE_CSV", "false") == "true"
 
 h = 0.05
-T = 26
+T = 15
 num_w = 1
 nc = 1
 nc_impact = 1

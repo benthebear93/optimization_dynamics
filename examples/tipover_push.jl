@@ -6,6 +6,8 @@ using JLD2
 using LinearAlgebra
 using Dates
 using Plots
+using JSON3
+using OrderedCollections: OrderedDict
 
 const iLQR = OptimizationDynamics.IterativeLQR
 
@@ -14,11 +16,12 @@ include(joinpath(@__DIR__, "..", "src", "models", "tipover_push", "simulator.jl"
 include(joinpath(@__DIR__, "..", "src", "models", "tipover_push", "visuals.jl"))
 
 h = 0.05
-T = 10
+T = 20
 PLOT_RESULTS = true
 SHOW_VIS = true
 OUTPUT_DIR = joinpath(@__DIR__, "..", "data")
 TRAJ_FILE = joinpath(OUTPUT_DIR, "tipover_push_traj.jld2")
+TIPOVER_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "tipover_ref_traj.json")
 
 # mode:
 # - false: optimize + save trajectory
@@ -27,6 +30,74 @@ VIS_ONLY = false
 VIS_ONLY = VIS_ONLY || ("--vis-only" in ARGS)
 
 logmsg(msg) = println("[$(Dates.format(now(), "HH:MM:SS"))] ", msg)
+
+function write_tipover_ref_traj_json(
+    out_file::String,
+    q_sol,
+    u_sol,
+    w_sol,
+    gamma_hist,
+    b_hist,
+    z_hist,
+    theta_hist,
+    h::Float64,
+    nq::Int,
+    nu::Int,
+    nw::Int,
+)
+    H = length(u_sol)
+    q = [Vector{Float64}(q_sol[t]) for t in 1:H]
+    u = [Vector{Float64}(u_sol[t]) for t in 1:H]
+    w = [Vector{Float64}(w_sol[t]) for t in 1:H]
+    gamma = [Vector{Float64}(gamma_hist[t]) for t in 1:H]
+    b = [Vector{Float64}(b_hist[t]) for t in 1:H]
+    z = [Vector{Float64}(z_hist[t]) for t in 1:H]
+    theta = [Vector{Float64}(theta_hist[t]) for t in 1:H]
+
+    nc = isempty(gamma) ? 0 : length(gamma[1])
+    nb = isempty(b) ? 0 : length(b[1])
+    nz = isempty(z) ? 0 : length(z[1])
+    ntheta = isempty(theta) ? 0 : length(theta[1])
+
+    iq0 = collect(1:nq)
+    iq1 = collect(nq .+ (1:nq))
+    iu1 = collect(2 * nq .+ (1:nu))
+    iw1 = collect(2 * nq + nu .+ (1:nw))
+    iq2 = collect(1:nq)
+    igamma1 = collect(nq .+ (1:nc))
+    ib1 = collect(nq + nc .+ (1:nb))
+
+    od = OrderedDict{String, Any}()
+    od["H"] = H
+    od["h"] = h
+    od["kappa"] = fill(2.0e-8, H)
+    od["q"] = q
+    od["u"] = u
+    od["w"] = w
+    od["gamma"] = gamma
+    od["b"] = b
+    od["z"] = z
+    od["theta"] = theta
+    od["iq0"] = iq0
+    od["iq1"] = iq1
+    od["iu1"] = iu1
+    od["iw1"] = iw1
+    od["iq2"] = iq2
+    od["igamma1"] = igamma1
+    od["ib1"] = ib1
+    od["nq"] = nq
+    od["nu"] = nu
+    od["nw"] = nw
+    od["nc"] = nc
+    od["nb"] = nb
+    od["nz"] = nz
+    od["nθ"] = ntheta
+
+    open(out_file, "w") do io
+        JSON3.write(io, od)
+    end
+    return nothing
+end
 
 function load_or_codegen_residuals(model::TipOverPush)
     path = @get_scratch!("tipoverpush")
@@ -80,7 +151,7 @@ xT = [qT; qT]
 Qv = Diagonal([0.2, 0.1, 0.2, 1.0, 0.05, 0.05, 0.05])
 # tip-over task: prioritize pitch tracking; keep x/z as soft regularization only.
 Qx = Diagonal([0.2, 0.05, 0.3, 12.0, 0.1, 0.05, 0.2, 0.2, 0.05, 0.3, 12.0, 0.1, 0.05, 0.2])
-Ru = 1.0e-2
+Ru = 1.2e-1
 ϕ_weight = 20.0
 
 function state_parts(x)
@@ -144,6 +215,7 @@ cons = [[cont for _ = 1:T-1]..., conT]
 
 q_sol = Vector{Vector{Float64}}()
 u_sol = Vector{Vector{Float64}}()
+gamma_sol = Vector{Vector{Float64}}()
 
 if VIS_ONLY
     if !isfile(TRAJ_FILE)
@@ -193,7 +265,13 @@ else
     logmsg("dynamics model ready (nx=$(nx), nu=$(nu), horizon=$(T))")
 
     w = [zeros(tipoverpush.nw) for _ = 1:T]
-    ū = [t <= 5 ? [4.0; 0.0] : t <= 8 ? [1.5; -0.3] : [0.0; 0.0] for t = 1:T-1]
+    # Central-height start: first move pusher slightly upward, then push in +x to create tip-over moment.
+    ū = [
+        t <= 4 ? [1.5; 1.8] :
+        t <= 10 ? [4.5; 0.6] :
+        t <= 14 ? [2.0; -0.2] :
+        [0.0; 0.0] for t = 1:T-1
+    ]
     logmsg("initial rollout start")
     x̄, _, _, _, _ = iLQR.rollout(model, x1, ū, w)
     logmsg("initial rollout done")
@@ -207,9 +285,9 @@ else
             α_min=1.0e-5,
             obj_tol=1.0e-3,
             grad_tol=1.0e-3,
-            max_iter=8,
-            max_al_iter=8,
-            con_tol=0.01,
+            max_iter=20,
+            max_al_iter=20,
+            con_tol=0.005,
             ρ_init=1.0,
             ρ_scale=10.0,
             verbose=false,
@@ -224,6 +302,7 @@ else
     logmsg("iLQR solve done")
 
     x_sol, u_sol = iLQR.get_trajectory(solver)
+    _, gamma_sol, b_sol, z_sol, theta_sol = iLQR.rollout(model, x1, u_sol, w)
     q_sol = state_to_configuration(x_sol)
 println("final box state q(T): ", q_sol[end][1:4])
 println("target box state  : ", qT[1:4])
@@ -238,6 +317,22 @@ println("max phi_pusher    : ", maximum(phi_push_all))
     qT_saved = copy(qT)
     @save TRAJ_FILE q_sol u_sol h_saved qT_saved
     logmsg("saved trajectory: " * TRAJ_FILE)
+
+    write_tipover_ref_traj_json(
+        TIPOVER_REF_TRAJ_FILE,
+        q_sol,
+        u_sol,
+        w,
+        gamma_sol,
+        b_sol,
+        z_sol,
+        theta_sol,
+        h,
+        tipoverpush.nq,
+        tipoverpush.nu,
+        tipoverpush.nw,
+    )
+    logmsg("saved reference json: " * TIPOVER_REF_TRAJ_FILE)
 end
 
 if PLOT_RESULTS
@@ -248,7 +343,7 @@ if PLOT_RESULTS
     box_x = [q[1] for q in q_sol]
     box_z = [q[3] for q in q_sol]
     box_pitch = [q[4] for q in q_sol]
-    phi_push = phi_push_all
+    phi_push = [ϕ_func(tipoverpush, q)[5] for q in q_sol]
     ux = [u[1] for u in u_sol]
     uz = [u[2] for u in u_sol]
 
@@ -270,12 +365,35 @@ if PLOT_RESULTS
     out_png = joinpath(OUTPUT_DIR, "tipover_push_summary.png")
     savefig(plt, out_png)
     println("saved plot: ", out_png)
+
+    if !isempty(gamma_sol)
+        n_gamma = minimum((length(gamma_sol), length(us)))
+        t_gamma = us[1:n_gamma]
+        gamma_comp(γ, i) = (γ isa AbstractVector && length(γ) >= i) ? γ[i] : 0.0
+        gamma1 = [gamma_comp(gamma_sol[t], 1) for t in 1:n_gamma]
+        gamma2 = [gamma_comp(gamma_sol[t], 2) for t in 1:n_gamma]
+        gamma3 = [gamma_comp(gamma_sol[t], 3) for t in 1:n_gamma]
+        gamma4 = [gamma_comp(gamma_sol[t], 4) for t in 1:n_gamma]
+        gamma5 = [gamma_comp(gamma_sol[t], 5) for t in 1:n_gamma]
+        gamma_sum = gamma1 .+ gamma2 .+ gamma3 .+ gamma4 .+ gamma5
+
+        p_gamma = plot(t_gamma, gamma1, label="gamma1", xlabel="time [s]", ylabel="normal force", title="TipOver Contact Normal Forces")
+        plot!(p_gamma, t_gamma, gamma2, label="gamma2")
+        plot!(p_gamma, t_gamma, gamma3, label="gamma3")
+        plot!(p_gamma, t_gamma, gamma4, label="gamma4")
+        plot!(p_gamma, t_gamma, gamma5, label="gamma5 (pusher)")
+        plot!(p_gamma, t_gamma, gamma_sum, label="gamma_sum", linestyle=:dash, linewidth=2)
+
+        out_gamma_png = joinpath(OUTPUT_DIR, "tipover_push_contact_force.png")
+        savefig(p_gamma, out_gamma_png)
+        println("saved plot: ", out_gamma_png)
+    end
 end
 
 if SHOW_VIS
     logmsg("meshcat visualization start")
     vis = Visualizer()
     render(vis)
-    visualize!(vis, tipoverpush, q_sol; Δt=h, cam_zoom=35.0)
+    visualize!(vis, tipoverpush, q_sol; Δt=h, fix_camera=true, cam_zoom=35.0)
     logmsg("meshcat animation loaded")
 end
