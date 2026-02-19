@@ -1,6 +1,8 @@
 using OptimizationDynamics
 using LinearAlgebra
 using Random
+using JSON3
+using OrderedCollections: OrderedDict
 
 const iLQR = OptimizationDynamics.IterativeLQR
 
@@ -12,6 +14,7 @@ SHOW_VIS = get(ENV, "POINT_PLANAR_SHOW_VIS", "true") == "true"
 RUN_DISTURBANCE = get(ENV, "POINT_PLANAR_RUN_DISTURBANCE", "false") == "true"
 PLOT_RESULTS = get(ENV, "POINT_PLANAR_PLOT_RESULTS", "false") == "true"
 SAVE_CSV = get(ENV, "POINT_PLANAR_SAVE_CSV", "false") == "true"
+POINT_PLANAR_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "point_planar_ref_traj.json")
 
 h = 0.05
 T = 15
@@ -152,6 +155,74 @@ function terminal_con(x, u, w)
     ]
 end
 
+function write_point_planar_ref_traj_json(
+    out_file::String,
+    q_sol,
+    u_sol,
+    w_sol,
+    gamma_hist,
+    b_hist,
+    z_hist,
+    theta_hist,
+    h::Float64,
+    nq::Int,
+    nu::Int,
+    nw::Int,
+)
+    H = length(u_sol)
+    q = [Vector{Float64}(q_sol[t]) for t in 1:H]
+    u = [Vector{Float64}(u_sol[t]) for t in 1:H]
+    w = [Vector{Float64}(w_sol[t]) for t in 1:H]
+    gamma = [Vector{Float64}(gamma_hist[t]) for t in 1:H]
+    b = [Vector{Float64}(b_hist[t]) for t in 1:H]
+    z = [Vector{Float64}(z_hist[t]) for t in 1:H]
+    theta = [Vector{Float64}(theta_hist[t]) for t in 1:H]
+
+    nc_ref = isempty(gamma) ? 0 : length(gamma[1])
+    nb_ref = isempty(b) ? 0 : length(b[1])
+    nz_ref = isempty(z) ? 0 : length(z[1])
+    ntheta_ref = isempty(theta) ? 0 : length(theta[1])
+
+    iq0 = collect(1:nq)
+    iq1 = collect(nq .+ (1:nq))
+    iu1 = collect(2 * nq .+ (1:nu))
+    iw1 = collect(2 * nq + nu .+ (1:nw))
+    iq2 = collect(1:nq)
+    igamma1 = collect(nq .+ (1:nc_ref))
+    ib1 = collect(nq + nc_ref .+ (1:nb_ref))
+
+    od = OrderedDict{String, Any}()
+    od["H"] = H
+    od["h"] = h
+    od["kappa"] = fill(2.0e-8, H)
+    od["q"] = q
+    od["u"] = u
+    od["w"] = w
+    od["gamma"] = gamma
+    od["b"] = b
+    od["z"] = z
+    od["theta"] = theta
+    od["iq0"] = iq0
+    od["iq1"] = iq1
+    od["iu1"] = iu1
+    od["iw1"] = iw1
+    od["iq2"] = iq2
+    od["igamma1"] = igamma1
+    od["ib1"] = ib1
+    od["nq"] = nq
+    od["nu"] = nu
+    od["nw"] = nw
+    od["nc"] = nc_ref
+    od["nb"] = nb_ref
+    od["nz"] = nz_ref
+    od["nθ"] = ntheta_ref
+
+    open(out_file, "w") do io
+        JSON3.write(io, od)
+    end
+    return nothing
+end
+
 cont = iLQR.Constraint(stage_con, nx, nu, idx_ineq=collect(1:(2 * nu)))
 conT = iLQR.Constraint(terminal_con, nx, 0)
 cons = [[cont for _ = 1:T-1]..., conT]
@@ -217,6 +288,23 @@ iLQR.reset!(solver.s_data)
 x_sol, u_sol = iLQR.get_trajectory(solver)
 gamma_sol = iLQR.get_contact_force(solver)
 q_sol = state_to_configuration(x_sol)
+_, gamma_hist_ref, b_hist_ref, z_hist_ref, theta_hist_ref = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
+
+write_point_planar_ref_traj_json(
+    POINT_PLANAR_REF_TRAJ_FILE,
+    q_sol,
+    u_sol,
+    w,
+    gamma_hist_ref,
+    b_hist_ref,
+    z_hist_ref,
+    theta_hist_ref,
+    h,
+    fixedplanarpush.nq,
+    fixedplanarpush.nu,
+    fixedplanarpush.nw,
+)
+println("saved reference json: " * POINT_PLANAR_REF_TRAJ_FILE)
 
 theta_goal = qT[1]
 theta_final = q_sol[end][1]

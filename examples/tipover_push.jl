@@ -19,6 +19,8 @@ h = 0.05
 T = 20
 PLOT_RESULTS = true
 SHOW_VIS = true
+PLOT_SMOOTH = true
+PLOT_SMOOTH_FACTOR = 8
 OUTPUT_DIR = joinpath(@__DIR__, "..", "data")
 TRAJ_FILE = joinpath(OUTPUT_DIR, "tipover_push_traj.jld2")
 TIPOVER_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "tipover_ref_traj.json")
@@ -132,6 +134,37 @@ function load_or_codegen_residuals(model::TipOverPush)
     @save residual_file r_to_func rz_to_func rθ_to_func rz_to_array rθ_to_array
     logmsg("saved residual cache: " * residual_file)
     return r_to_func, rz_to_func, rθ_to_func, rz_to_array, rθ_to_array
+end
+
+function resample_series(t_src::Vector{Float64}, y_src::Vector{Float64}, t_dst::Vector{Float64})
+    n = length(t_src)
+    n == length(y_src) || error("time/value length mismatch")
+    n > 0 || return Float64[]
+    n == 1 && return fill(y_src[1], length(t_dst))
+
+    y_dst = Vector{Float64}(undef, length(t_dst))
+    i = 1
+    for k in eachindex(t_dst)
+        t = t_dst[k]
+        if t <= t_src[1]
+            y_dst[k] = y_src[1]
+            continue
+        end
+        if t >= t_src[end]
+            y_dst[k] = y_src[end]
+            continue
+        end
+        while i < n - 1 && t > t_src[i + 1]
+            i += 1
+        end
+        t0 = t_src[i]
+        t1 = t_src[i + 1]
+        y0 = y_src[i]
+        y1 = y_src[i + 1]
+        α = (t - t0) / (t1 - t0 + 1.0e-12)
+        y_dst[k] = (1.0 - α) * y0 + α * y1
+    end
+    return y_dst
 end
 
 logmsg("tipover_push start (h=$(h), T=$(T), nq=$(tipoverpush.nq), nu=$(tipoverpush.nu))")
@@ -339,6 +372,18 @@ if PLOT_RESULTS
     mkpath(OUTPUT_DIR)
     ts = collect(0:(length(q_sol) - 1)) .* h
     us = collect(0:(length(u_sol) - 1)) .* h
+    if PLOT_SMOOTH && length(ts) > 1
+        n_dense = (length(ts) - 1) * PLOT_SMOOTH_FACTOR + 1
+        ts_plot = collect(LinRange(ts[1], ts[end], n_dense))
+    else
+        ts_plot = ts
+    end
+    if PLOT_SMOOTH && length(us) > 1
+        n_udense = (length(us) - 1) * PLOT_SMOOTH_FACTOR + 1
+        us_plot = collect(LinRange(us[1], us[end], n_udense))
+    else
+        us_plot = us
+    end
 
     box_x = [q[1] for q in q_sol]
     box_z = [q[3] for q in q_sol]
@@ -346,19 +391,25 @@ if PLOT_RESULTS
     phi_push = [ϕ_func(tipoverpush, q)[5] for q in q_sol]
     ux = [u[1] for u in u_sol]
     uz = [u[2] for u in u_sol]
+    box_pitch_plot = resample_series(ts, box_pitch, ts_plot)
+    box_x_plot = resample_series(ts, box_x, ts_plot)
+    box_z_plot = resample_series(ts, box_z, ts_plot)
+    phi_push_plot = resample_series(ts, phi_push, ts_plot)
+    ux_plot = resample_series(us, ux, us_plot)
+    uz_plot = resample_series(us, uz, us_plot)
 
-    p1 = plot(ts, box_pitch, label="pitch", xlabel="time [s]", ylabel="rad", title="Box Pitch")
+    p1 = plot(ts_plot, box_pitch_plot, label="pitch", xlabel="time [s]", ylabel="rad", title="Box Pitch")
     hline!(p1, [qT[4]], linestyle=:dash, label="pitch target")
 
-    p2 = plot(ts, box_x, label="x", xlabel="time [s]", ylabel="m", title="Box Position")
-    plot!(p2, ts, box_z, label="z")
+    p2 = plot(ts_plot, box_x_plot, label="x", xlabel="time [s]", ylabel="m", title="Box Position")
+    plot!(p2, ts_plot, box_z_plot, label="z")
     hline!(p2, [qT[1]], linestyle=:dash, label="x target")
     hline!(p2, [qT[3]], linestyle=:dot, label="z target")
 
-    p3 = plot(us, ux, label="u_x", xlabel="time [s]", ylabel="input", title="Control")
-    plot!(p3, us, uz, label="u_z")
+    p3 = plot(us_plot, ux_plot, label="u_x", xlabel="time [s]", ylabel="input", title="Control")
+    plot!(p3, us_plot, uz_plot, label="u_z")
 
-    p4 = plot(ts, phi_push, label="phi_pusher", xlabel="time [s]", ylabel="signed distance", title="Pusher Contact Gap")
+    p4 = plot(ts_plot, phi_push_plot, label="phi_pusher", xlabel="time [s]", ylabel="signed distance", title="Pusher Contact Gap")
     hline!(p4, [max_pusher_gap], linestyle=:dash, label="gap limit")
 
     plt = plot(p1, p2, p3, p4, layout=(2, 2), size=(1100, 700))
@@ -376,13 +427,30 @@ if PLOT_RESULTS
         gamma4 = [gamma_comp(gamma_sol[t], 4) for t in 1:n_gamma]
         gamma5 = [gamma_comp(gamma_sol[t], 5) for t in 1:n_gamma]
         gamma_sum = gamma1 .+ gamma2 .+ gamma3 .+ gamma4 .+ gamma5
+        t_gamma_plot = t_gamma
+        gamma1_plot = gamma1
+        gamma2_plot = gamma2
+        gamma3_plot = gamma3
+        gamma4_plot = gamma4
+        gamma5_plot = gamma5
+        gamma_sum_plot = gamma_sum
+        if PLOT_SMOOTH && length(t_gamma) > 1
+            n_gdense = (length(t_gamma) - 1) * PLOT_SMOOTH_FACTOR + 1
+            t_gamma_plot = collect(LinRange(t_gamma[1], t_gamma[end], n_gdense))
+            gamma1_plot = resample_series(t_gamma, gamma1, t_gamma_plot)
+            gamma2_plot = resample_series(t_gamma, gamma2, t_gamma_plot)
+            gamma3_plot = resample_series(t_gamma, gamma3, t_gamma_plot)
+            gamma4_plot = resample_series(t_gamma, gamma4, t_gamma_plot)
+            gamma5_plot = resample_series(t_gamma, gamma5, t_gamma_plot)
+            gamma_sum_plot = resample_series(t_gamma, gamma_sum, t_gamma_plot)
+        end
 
-        p_gamma = plot(t_gamma, gamma1, label="gamma1", xlabel="time [s]", ylabel="normal force", title="TipOver Contact Normal Forces")
-        plot!(p_gamma, t_gamma, gamma2, label="gamma2")
-        plot!(p_gamma, t_gamma, gamma3, label="gamma3")
-        plot!(p_gamma, t_gamma, gamma4, label="gamma4")
-        plot!(p_gamma, t_gamma, gamma5, label="gamma5 (pusher)")
-        plot!(p_gamma, t_gamma, gamma_sum, label="gamma_sum", linestyle=:dash, linewidth=2)
+        p_gamma = plot(t_gamma_plot, gamma1_plot, label="gamma1", xlabel="time [s]", ylabel="normal force", title="TipOver Contact Normal Forces")
+        plot!(p_gamma, t_gamma_plot, gamma2_plot, label="gamma2")
+        plot!(p_gamma, t_gamma_plot, gamma3_plot, label="gamma3")
+        plot!(p_gamma, t_gamma_plot, gamma4_plot, label="gamma4")
+        plot!(p_gamma, t_gamma_plot, gamma5_plot, label="gamma5 (pusher)")
+        plot!(p_gamma, t_gamma_plot, gamma_sum_plot, label="gamma_sum", linestyle=:dash, linewidth=2)
 
         out_gamma_png = joinpath(OUTPUT_DIR, "tipover_push_contact_force.png")
         savefig(p_gamma, out_gamma_png)
