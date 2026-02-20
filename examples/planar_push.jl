@@ -2,6 +2,8 @@
 using OptimizationDynamics
 const iLQR = OptimizationDynamics.IterativeLQR
 using LinearAlgebra
+using JSON3
+using OrderedCollections: OrderedDict
 using Random
 
 function module_dir()
@@ -129,6 +131,74 @@ function terminal_con(x, u, w)
     ]
 end
 
+function write_planar_push_ref_traj_json(
+    out_file::String,
+    q_sol,
+    u_sol,
+    w_sol,
+    gamma_hist,
+    b_hist,
+    z_hist,
+    theta_hist,
+    h::Float64,
+    nq::Int,
+    nu::Int,
+    nw::Int,
+)
+    H = length(u_sol)
+    q = [Vector{Float64}(q_sol[t]) for t in 1:H]
+    u = [Vector{Float64}(u_sol[t]) for t in 1:H]
+    w = [Vector{Float64}(w_sol[t]) for t in 1:H]
+    gamma = [Vector{Float64}(gamma_hist[t]) for t in 1:H]
+    b = [Vector{Float64}(b_hist[t]) for t in 1:H]
+    z = [Vector{Float64}(z_hist[t]) for t in 1:H]
+    theta = [Vector{Float64}(theta_hist[t]) for t in 1:H]
+
+    nc_ref = isempty(gamma) ? 0 : length(gamma[1])
+    nb_ref = isempty(b) ? 0 : length(b[1])
+    nz_ref = isempty(z) ? 0 : length(z[1])
+    ntheta_ref = isempty(theta) ? 0 : length(theta[1])
+
+    iq0 = collect(1:nq)
+    iq1 = collect(nq .+ (1:nq))
+    iu1 = collect(2 * nq .+ (1:nu))
+    iw1 = collect(2 * nq + nu .+ (1:nw))
+    iq2 = collect(1:nq)
+    igamma1 = collect(nq .+ (1:nc_ref))
+    ib1 = collect(nq + nc_ref .+ (1:nb_ref))
+
+    od = OrderedDict{String,Any}()
+    od["H"] = H
+    od["h"] = h
+    od["kappa"] = fill(2.0e-8, H)
+    od["q"] = q
+    od["u"] = u
+    od["w"] = w
+    od["gamma"] = gamma
+    od["b"] = b
+    od["z"] = z
+    od["theta"] = theta
+    od["iq0"] = iq0
+    od["iq1"] = iq1
+    od["iu1"] = iu1
+    od["iw1"] = iw1
+    od["iq2"] = iq2
+    od["igamma1"] = igamma1
+    od["ib1"] = ib1
+    od["nq"] = nq
+    od["nu"] = nu
+    od["nw"] = nw
+    od["nc"] = nc_ref
+    od["nb"] = nb_ref
+    od["nz"] = nz_ref
+    od["nθ"] = ntheta_ref
+
+    open(out_file, "w") do io
+        JSON3.write(io, od)
+    end
+    return nothing
+end
+
 cont = iLQR.Constraint(stage_con, nx, nu, idx_ineq=collect(1:(2 * nu + 3)))
 conT = iLQR.Constraint(terminal_con, nx, 0)
 cons = [[cont for t = 1:T-1]..., conT];
@@ -173,17 +243,28 @@ iLQR.reset!(solver.s_data)
 x_sol, u_sol = iLQR.get_trajectory(solver)
 q_sol = state_to_configuration(x_sol)
 x_rollout_sol, gamma_hist, b_hist, ip_z_hist, ip_θ_hist = iLQR.rollout(model, x1, u_sol, w)
-@show u_sol
-@show x_rollout_sol
 q_rollout_sol = state_to_configuration(x_rollout_sol)
 visualize!(vis, planarpush, q_rollout_sol, Δt=h);
 
-# # JLD2 파일 저장
-gait_path = joinpath(module_dir(), "pusher_ref_traj.jld2")
-save_trajectory(gait_path, x_rollout_sol, u_sol, gamma_hist, b_hist, ip_z_hist, ip_θ_hist, w, model, h, T)
-
-# 저장된 데이터 로드 (확인용)
-# ref_traj = deepcopy(get_trajectory(planarpush, env, gait_path, load_type=:joint_traj))
+# # JSON 파일 저장
+ref_out_dir = joinpath(module_dir(), "..", "data", "reference_trajectory")
+mkpath(ref_out_dir)
+ref_json_path = joinpath(ref_out_dir, "pusher_ref_traj.json")
+write_planar_push_ref_traj_json(
+    ref_json_path,
+    q_rollout_sol,
+    u_sol,
+    w,
+    gamma_hist,
+    b_hist,
+    ip_z_hist,
+    ip_θ_hist,
+    h,
+    planarpush.nq,
+    planarpush.nu,
+    planarpush.nw,
+)
+println("saved reference json: " * ref_json_path)
 
 q_sol = state_to_configuration(x_sol)
 visualize!(vis, planarpush, q_sol, Δt=h);
