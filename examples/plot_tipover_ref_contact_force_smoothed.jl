@@ -108,11 +108,6 @@ function main()
     plot!(p, td, g_smooth[5], label="gamma5 (pusher)", linewidth=2.5, alpha=0.95)
     plot!(p, td, g_sum, label="gamma_sum", linestyle=:dash, linewidth=3.0)
 
-    # faint raw markers for reference
-    for i in 1:5
-        scatter!(p, t, g_raw[i], label=(i == 1 ? "raw samples" : ""), markersize=2.0, alpha=0.2, color=:gray)
-    end
-
     mkpath(OUT_DIR)
     savefig(p, OUT_PNG)
     println("saved plot: ", OUT_PNG)
