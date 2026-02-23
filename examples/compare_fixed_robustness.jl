@@ -36,11 +36,11 @@ const FB_THETA_TOL = something(tryparse(Float64, get(ENV, "ROBUST_FB_THETA_TOL",
 const THETA_SUCCESS_TOL = 0.10
 
 module PointRun
-include("point_planar_push.jl")
+include("point_push_fixed_box.jl")
 end
 
 module LineRun
-include("line_planar_push.jl")
+include("line_push_fixed_box.jl")
 end
 
 function clamp_u(u, ul, uu)

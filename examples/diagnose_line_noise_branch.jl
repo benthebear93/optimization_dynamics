@@ -24,7 +24,7 @@ const PERTURB_TRIALS = something(tryparse(Int, get(ENV, "LINE_BRANCH_PERTURB_TRI
 const PERTURB_STD = something(tryparse(Float64, get(ENV, "LINE_BRANCH_PERTURB_STD", "1.0e-5")), 1.0e-5)
 
 module LineRun
-include("line_box_moving.jl")
+include("line_push_free_box.jl")
 end
 
 function clamp_u(u, ul, uu)

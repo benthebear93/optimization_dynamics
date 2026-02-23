@@ -58,13 +58,13 @@ end
 
 function rebuild_cache!()
     # Include point script and snapshot needed globals.
-    include("point_box_moving.jl")
+    include("point_push_free_box.jl")
     q_point = deepcopy(Main.q_sol)
     h_point = Main.h
     rot2_point = Main.rot2
 
     # Include line script and snapshot needed globals.
-    include("line_box_moving.jl")
+    include("line_push_free_box.jl")
     q_line = deepcopy(Main.q_sol)
     h_line = Main.h
     rot2_line = Main.rot2

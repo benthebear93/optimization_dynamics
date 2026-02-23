@@ -12,11 +12,11 @@ const DIST_STD_Y = 0.002
 const DIST_STD_THETA = 0.005
 
 module PointRun
-include("point_box_moving.jl")
+include("point_push_free_box.jl")
 end
 
 module LineRun
-include("line_box_moving.jl")
+include("line_push_free_box.jl")
 end
 
 function clamp_u(u, ul, uu)

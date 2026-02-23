@@ -29,11 +29,11 @@ const SHOW_MESHCAT_FEEDBACK = get(ENV, "ROBUST_SHOW_MESHCAT_FEEDBACK", "true") =
 const SAVE_DISTRIBUTION_METRICS = get(ENV, "ROBUST_SAVE_DISTRIBUTION_METRICS", "true") == "true"
 
 module PointRun
-include("point_box_moving.jl")
+include("point_push_free_box.jl")
 end
 
 module LineRun
-include("line_box_moving.jl")
+include("line_push_free_box.jl")
 end
 
 function rot2(θ)

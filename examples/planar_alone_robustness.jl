@@ -39,11 +39,11 @@ const POS_SUCCESS_TOL = 0.03
 const THETA_SUCCESS_TOL = 0.10
 
 module PointRun
-include("point_box_moving.jl")
+include("point_push_free_box.jl")
 end
 
 module LineRun
-include("line_box_moving.jl")
+include("line_push_free_box.jl")
 end
 
 function clamp_u(u, ul, uu)

@@ -16,7 +16,7 @@ RUN_DISTURBANCE = false
 PLOT_RESULTS = false
 PLOT_DIAGNOSTICS = true
 SAVE_CSV = false
-POINT_BOX_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "point_box_ref_traj.json")
+POINT_PUSH_FREE_BOX_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "point_push_free_box_ref_traj.json")
 
 h = 0.05
 T = 15
@@ -174,7 +174,7 @@ function terminal_con(x, u, w)
     ]
 end
 
-function write_point_box_ref_traj_json(
+function write_point_push_free_box_ref_traj_json(
     out_file::String,
     q_sol,
     u_sol,
@@ -308,8 +308,8 @@ x_sol, u_sol = iLQR.get_trajectory(solver)
 q_sol = state_to_configuration(x_sol)
 _, gamma_hist_ref, b_hist_ref, z_hist_ref, theta_hist_ref = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
 
-write_point_box_ref_traj_json(
-    POINT_BOX_REF_TRAJ_FILE,
+write_point_push_free_box_ref_traj_json(
+    POINT_PUSH_FREE_BOX_REF_TRAJ_FILE,
     q_sol,
     u_sol,
     w,
@@ -322,7 +322,7 @@ write_point_box_ref_traj_json(
     planarpush.nu,
     planarpush.nw,
 )
-println("saved reference json: " * POINT_BOX_REF_TRAJ_FILE)
+println("saved reference json: " * POINT_PUSH_FREE_BOX_REF_TRAJ_FILE)
 
 box_goal = qT[1:2]
 box_final = q_sol[end][1:2]

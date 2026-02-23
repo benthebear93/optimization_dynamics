@@ -6,11 +6,11 @@ const OUTPUT_DIR = "planar_push_data"
 mkpath(OUTPUT_DIR)
 
 module PointRun
-include("point_box_moving.jl")
+include("point_push_free_box.jl")
 end
 
 module LineRun
-include("line_box_moving.jl")
+include("line_push_free_box.jl")
 end
 
 gamma_comp(γ, i) = (γ isa AbstractVector && length(γ) >= i) ? γ[i] : 0.0
