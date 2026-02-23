@@ -12,6 +12,8 @@ SHOW_VIS = get(ENV, "LINE_PUSH_FIXED_BOX_SHOW_VIS", "true") == "true"
 RUN_DISTURBANCE = get(ENV, "LINE_PUSH_FIXED_BOX_RUN_DISTURBANCE", "false") == "true"
 PLOT_RESULTS = get(ENV, "LINE_PUSH_FIXED_BOX_PLOT_RESULTS", "true") == "true"
 SAVE_CSV = get(ENV, "LINE_PUSH_FIXED_BOX_SAVE_CSV", "false") == "true"
+LINE_PUSH_FIXED_BOX_REF_TRAJ_DIR = joinpath(@__DIR__, "..", "data", "reference_trajectory")
+LINE_PUSH_FIXED_BOX_REF_TRAJ_FILE = joinpath(LINE_PUSH_FIXED_BOX_REF_TRAJ_DIR, "line_push_fixed_box_ref_traj.json")
 
 h = 0.05
 T = 26

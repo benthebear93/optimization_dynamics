@@ -14,7 +14,8 @@ SHOW_VIS = get(ENV, "POINT_PUSH_FIXED_BOX_SHOW_VIS", "true") == "true"
 RUN_DISTURBANCE = get(ENV, "POINT_PUSH_FIXED_BOX_RUN_DISTURBANCE", "false") == "true"
 PLOT_RESULTS = get(ENV, "POINT_PUSH_FIXED_BOX_PLOT_RESULTS", "false") == "true"
 SAVE_CSV = get(ENV, "POINT_PUSH_FIXED_BOX_SAVE_CSV", "false") == "true"
-POINT_PUSH_FIXED_BOX_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "point_push_fixed_box_ref_traj.json")
+POINT_PUSH_FIXED_BOX_REF_TRAJ_DIR = joinpath(@__DIR__, "..", "data", "reference_trajectory")
+POINT_PUSH_FIXED_BOX_REF_TRAJ_FILE = joinpath(POINT_PUSH_FIXED_BOX_REF_TRAJ_DIR, "point_push_fixed_box_ref_traj.json")
 
 h = 0.05
 T = 15
@@ -290,6 +291,7 @@ gamma_sol = iLQR.get_contact_force(solver)
 q_sol = state_to_configuration(x_sol)
 _, gamma_hist_ref, b_hist_ref, z_hist_ref, theta_hist_ref = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
 
+mkpath(POINT_PUSH_FIXED_BOX_REF_TRAJ_DIR)
 write_point_push_fixed_box_ref_traj_json(
     POINT_PUSH_FIXED_BOX_REF_TRAJ_FILE,
     q_sol,

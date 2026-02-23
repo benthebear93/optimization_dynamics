@@ -41,6 +41,7 @@ julia --project=.
 include("examples/planar_push.jl") # simplified model
 include("examples/planar_push_complex.jl") # complex model
 include("examples/line_push_fixed_box.jl")
+include("examples/point_push_fixed_box.jl")
 include("examples/plot_planar_push_complex_pusher_box_force.jl")
 
 ```

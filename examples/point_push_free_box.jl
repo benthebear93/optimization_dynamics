@@ -1,6 +1,10 @@
 using OptimizationDynamics
 using LinearAlgebra
 using Random
+using MeshCat
+using Colors
+using JLD2
+using Scratch
 using JSON3
 using OrderedCollections: OrderedDict
 ENV["GKSwstype"] = "100"
@@ -12,36 +16,50 @@ const iLQR = OptimizationDynamics.IterativeLQR
 # ------------------------------
 GB = false
 SHOW_VIS = true
-RUN_DISTURBANCE = false
+RUN_DISTURBANCE = true
 PLOT_RESULTS = false
 PLOT_DIAGNOSTICS = true
 SAVE_CSV = false
-POINT_PUSH_FREE_BOX_REF_TRAJ_FILE = joinpath(@__DIR__, "..", "point_push_free_box_ref_traj.json")
+SOLVER_VERBOSE = false
+POINT_PUSH_FREE_BOX_REF_TRAJ_DIR = joinpath(@__DIR__, "..", "data", "reference_trajectory")
+POINT_PUSH_FREE_BOX_REF_TRAJ_FILE = joinpath(POINT_PUSH_FREE_BOX_REF_TRAJ_DIR, "point_push_free_box_ref_traj.json")
+POINT_PUSH_FREE_DATA_DIR = joinpath(@__DIR__, "..", "data", "point_push_free_data")
+POINT_PUSH_FREE_DATA_FILE = joinpath(POINT_PUSH_FREE_DATA_DIR, "point_push_free_rollout_data.json")
 
 h = 0.05
-T = 15
+T = 25
 num_w = planarpush.nw
 nc = 1
 nc_impact = 1
 r_dim = 0.1
 
 x_goal = 0.5
-y_goal = 0.3
+y_goal = 0.2
 θ_goal = 1.1
 
 uw_values = [0.0, 0.001, 0.0025, 0.005] # disturbance values
-test_num_w = 1
+test_num_w = 3
 DISTURBANCE_SCALE = 0.0
+
+function load_planarpush_residuals_from_scratch()
+    path = @get_scratch!("planarpush")
+    residual_file = joinpath(path, "residual.jld2")
+    isfile(residual_file) || error("missing residual file: $(residual_file). Run include(\"src/models/planar_push/codegen.jl\") first.")
+    @load residual_file r_pp_func rz_pp_func rθ_pp_func
+    return eval(r_pp_func), eval(rz_pp_func), eval(rθ_pp_func)
+end
 
 # ------------------------------
 # Dynamics
 # ------------------------------
+r_func, rz_func, rθ_func = load_planarpush_residuals_from_scratch()
+
 im_dyn = ImplicitDynamics(
     planarpush,
     h,
-    eval(r_pp_func),
-    eval(rz_pp_func),
-    eval(rθ_pp_func);
+    r_func,
+    rz_func,
+    rθ_func;
     r_tol=1.0e-8,
     κ_eval_tol=1.0e-4,
     κ_grad_tol=1.0e-2,
@@ -103,6 +121,96 @@ function state_parts(x)
     q2 = @views x[nq .+ (1:nq)]
     v1 = (q2 - q1) ./ h
     return q1, q2, v1
+end
+
+function clamp_u(u, ul, uu)
+    uc = copy(u)
+    for i in eachindex(uc)
+        uc[i] = clamp(uc[i], ul[i], uu[i])
+    end
+    return uc
+end
+
+function rollout_feedback(dyns, x1, x_nom, u_nom, K, w_seq, ul, uu)
+    N = length(dyns)
+    x_hist = Vector{Vector{Float64}}(undef, N + 1)
+    u_hist = Vector{Vector{Float64}}(undef, N)
+    x = copy(x1)
+    x_hist[1] = copy(x)
+    for t in 1:N
+        ut = u_nom[t] + K[t] * (x - x_nom[t])
+        ut = clamp_u(ut, ul, uu)
+        xnext = copy(iLQR.step!(dyns[t], x, ut, w_seq[t]))
+        u_hist[t] = copy(ut)
+        x_hist[t + 1] = copy(xnext)
+        x = xnext
+    end
+    return x_hist, u_hist
+end
+
+to_float_vec(x) = Float64[v for v in x]
+to_float_vecs(xs) = [to_float_vec(x) for x in xs]
+
+function save_point_push_free_data(
+    out_file::String;
+    h::Float64,
+    q_goal,
+    q_nom,
+    u_nom,
+    gamma_nom,
+    w_nom,
+    q_fb=nothing,
+    u_fb=nothing,
+    gamma_fb=nothing,
+    w_fb=nothing,
+)
+    goal_pose = q_goal[1:3]
+
+    nom_final = q_nom[end]
+    nom_pose_err = nom_final[1:2] - q_goal[1:2]
+    nom_theta_err = nom_final[3] - q_goal[3]
+    nom_control_effort = sum(dot(u, u) for u in u_nom)
+
+    od = OrderedDict{String,Any}()
+    od["h"] = h
+    od["goal_pose"] = to_float_vec(goal_pose)
+
+    nominal = OrderedDict{String,Any}()
+    nominal["q"] = to_float_vecs(q_nom)
+    nominal["u"] = to_float_vecs(u_nom)
+    nominal["gamma"] = to_float_vecs(gamma_nom)
+    nominal["w"] = to_float_vecs(w_nom)
+    nominal["control_effort"] = nom_control_effort
+    nominal["pose_error"] = to_float_vec(nom_pose_err)
+    nominal["pose_error_norm"] = norm(nom_pose_err)
+    nominal["theta_error"] = nom_theta_err
+    od["nominal"] = nominal
+
+    closed_loop = OrderedDict{String,Any}()
+    if q_fb === nothing || u_fb === nothing || gamma_fb === nothing || w_fb === nothing
+        closed_loop["available"] = false
+    else
+        fb_final = q_fb[end]
+        fb_pose_err = fb_final[1:2] - q_goal[1:2]
+        fb_theta_err = fb_final[3] - q_goal[3]
+        fb_control_effort = sum(dot(u, u) for u in u_fb)
+        closed_loop["available"] = true
+        closed_loop["q"] = to_float_vecs(q_fb)
+        closed_loop["u"] = to_float_vecs(u_fb)
+        closed_loop["gamma"] = to_float_vecs(gamma_fb)
+        closed_loop["w"] = to_float_vecs(w_fb)
+        closed_loop["control_effort"] = fb_control_effort
+        closed_loop["pose_error"] = to_float_vec(fb_pose_err)
+        closed_loop["pose_error_norm"] = norm(fb_pose_err)
+        closed_loop["theta_error"] = fb_theta_err
+    end
+    od["closed_loop"] = closed_loop
+
+    mkpath(dirname(out_file))
+    open(out_file, "w") do io
+        JSON3.write(io, od; indent=2)
+    end
+    return nothing
 end
 
 function objt(x, u, w)
@@ -242,6 +350,17 @@ function write_point_push_free_box_ref_traj_json(
     return nothing
 end
 
+function has_nonfinite_nested(vs)
+    for v in vs
+        for x in v
+            if !isfinite(x)
+                return true
+            end
+        end
+    end
+    return false
+end
+
 cont = iLQR.Constraint(stage_con, nx, nu, idx_ineq=collect(1:(2 * nu + 3)))
 conT = iLQR.Constraint(terminal_con, nx, 0)
 cons = [[cont for _ = 1:T-1]..., conT]
@@ -284,7 +403,7 @@ solver = iLQR.solver(
         con_tol=0.005,
         ρ_init=1.0,
         ρ_scale=10.0,
-        verbose=false,
+        verbose=SOLVER_VERBOSE,
     ),
 )
 
@@ -305,9 +424,21 @@ iLQR.reset!(solver.s_data)
 # Solution
 # ------------------------------
 x_sol, u_sol = iLQR.get_trajectory(solver)
-q_sol = state_to_configuration(x_sol)
+x_eval, gamma_sol = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
+q_sol = state_to_configuration(x_eval)
 _, gamma_hist_ref, b_hist_ref, z_hist_ref, theta_hist_ref = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
 
+if has_nonfinite_nested(x_sol) ||
+   has_nonfinite_nested(u_sol) ||
+   has_nonfinite_nested(q_sol) ||
+   has_nonfinite_nested(gamma_hist_ref) ||
+   has_nonfinite_nested(b_hist_ref) ||
+   has_nonfinite_nested(z_hist_ref) ||
+   has_nonfinite_nested(theta_hist_ref)
+    error("Non-finite values detected in trajectory. Likely residual codegen is stale after changing planarpush.nw. Re-run include(\"src/models/planar_push/codegen.jl\") and retry.")
+end
+
+mkpath(POINT_PUSH_FREE_BOX_REF_TRAJ_DIR)
 write_point_push_free_box_ref_traj_json(
     POINT_PUSH_FREE_BOX_REF_TRAJ_FILE,
     q_sol,
@@ -331,15 +462,8 @@ box_pos_err = box_final - box_goal
 θ_final = q_sol[end][3]
 θ_err = θ_final - θ_goal_eval
 control_effort = sum(dot(u, u) for u in u_sol)
-# NOTE: get_contact_force(solver) can remain zero if backend solver data gamma buffer
-# is not populated during rollout. Recompute gamma directly from debug dynamics.
-gamma_vals = Float64[]
-γ_tmp = zeros(nc)
-b_tmp = zeros(9)
-for t in 1:length(u_sol)
-    eval_contact_data!(γ_tmp, b_tmp, x_sol[t], u_sol[t], w[t])
-    push!(gamma_vals, γ_tmp[1])
-end
+gamma_comp(γ, i) = (γ isa AbstractVector && length(γ) >= i) ? γ[i] : 0.0
+gamma_vals = [gamma_comp(γ, 1) for γ in gamma_sol]
 gamma_peak = maximum(abs.(gamma_vals))
 gamma_mean_abs = sum(abs.(gamma_vals)) / length(gamma_vals)
 tau_proxy_hist = Float64[]
@@ -422,9 +546,51 @@ if RUN_DISTURBANCE && num_w > 0
     uw = [[(uw_values[test_num_w] + 0.01 * rand()) * rand([-1, 1])] for _ = 1:T]
 
     _, gamma_actual = iLQR.rollout(ilqr_dyns, x1, u_sol, w)
-    x_dist, gamma_hist_dist = iLQR.rollout(ilqr_dyns, x1, u_sol, uw)
-    q_dist = state_to_configuration(x_dist)
+    x_dist_open, gamma_hist_dist_open = iLQR.rollout(ilqr_dyns, x1, u_sol, uw)
+    q_dist_open = state_to_configuration(x_dist_open)
+
+    K = solver.p_data.K
+    x_dist_fb, u_dist_fb = rollout_feedback(ilqr_dyns, x1, x_sol, u_sol, K, uw, ul, uu)
+    q_dist_fb = state_to_configuration(x_dist_fb)
+    _, gamma_hist_dist_fb = iLQR.rollout(ilqr_dyns, x1, u_dist_fb, uw)
+
+    open_box_final = q_dist_open[end][1:2]
+    fb_box_final = q_dist_fb[end][1:2]
+    open_theta_final = q_dist_open[end][3]
+    fb_theta_final = q_dist_fb[end][3]
+    @show norm(open_box_final - qT[1:2])
+    @show norm(fb_box_final - qT[1:2])
+    @show abs(open_theta_final - qT[3])
+    @show abs(fb_theta_final - qT[3])
 end
+
+mkpath(POINT_PUSH_FREE_DATA_DIR)
+if RUN_DISTURBANCE && num_w > 0 && @isdefined(q_dist_fb) && @isdefined(u_dist_fb) && @isdefined(gamma_hist_dist_fb) && @isdefined(uw)
+    save_point_push_free_data(
+        POINT_PUSH_FREE_DATA_FILE;
+        h=h,
+        q_goal=qT,
+        q_nom=q_sol,
+        u_nom=u_sol,
+        gamma_nom=gamma_sol,
+        w_nom=w,
+        q_fb=q_dist_fb,
+        u_fb=u_dist_fb,
+        gamma_fb=gamma_hist_dist_fb,
+        w_fb=uw,
+    )
+else
+    save_point_push_free_data(
+        POINT_PUSH_FREE_DATA_FILE;
+        h=h,
+        q_goal=qT,
+        q_nom=q_sol,
+        u_nom=u_sol,
+        gamma_nom=gamma_sol,
+        w_nom=w,
+    )
+end
+println("saved rollout data: " * POINT_PUSH_FREE_DATA_FILE)
 
 # ------------------------------
 # Optional: plotting
@@ -433,24 +599,28 @@ if PLOT_RESULTS && RUN_DISTURBANCE && num_w > 0
     using Plots
 
     θ_sol = [q_sol[i][3] for i in 1:T]
-    θ_dist = [q_dist[i][3] for i in 1:T]
+    θ_dist_open = [q_dist_open[i][3] for i in 1:T]
+    θ_dist_fb = [q_dist_fb[i][3] for i in 1:T]
     time = collect(0:h:(T-1) * h)
     θ_goal_line = fill(θ_goal, length(time))
 
     plot(time, θ_sol, label="actual_θ", linewidth=2, color=:green)
-    plot!(time, θ_dist, label="dist_θ", linewidth=2, color=:red)
+    plot!(time, θ_dist_open, label="dist_open_θ", linewidth=2, color=:red)
+    plot!(time, θ_dist_fb, label="dist_fb_θ", linewidth=2, color=:blue)
     plot!(time, θ_goal_line, label="goal_θ", linewidth=2, color=:black, linestyle=:dash)
     title!("[planar] θ with dist (θ_goal=$(θ_goal), uw=$(uw_values[test_num_w]))")
     xlabel!("Time (s)")
     ylabel!("Rotation (rad)")
     savefig("data/planar_θ_goal_$(θ_goal)_$(uw_values[test_num_w]).png")
 
-    gamma_sol_vals = [gamma_actual[i][1] for i in 1:T-1]
-    gamma_hist_dist_vals = [gamma_hist_dist[i][1] for i in 1:T-1]
+    gamma_sol_vals = [gamma_comp(gamma_actual[i], 1) for i in 1:T-1]
+    gamma_open_vals = [gamma_comp(gamma_hist_dist_open[i], 1) for i in 1:T-1]
+    gamma_fb_vals = [gamma_comp(gamma_hist_dist_fb[i], 1) for i in 1:T-1]
     time_controls = collect(0:h:(T-2) * h)
 
-    plot(time_controls, gamma_sol_vals .+ gamma_hist_dist_vals, label="γ_actual", linewidth=2, color=:green)
-    plot!(time_controls, gamma_hist_dist_vals, label="γ_dist", linewidth=2, color=:red)
+    plot(time_controls, gamma_sol_vals, label="γ_nom", linewidth=2, color=:green)
+    plot!(time_controls, gamma_open_vals, label="γ_dist_open", linewidth=2, color=:red)
+    plot!(time_controls, gamma_fb_vals, label="γ_dist_fb", linewidth=2, color=:blue)
     title!("[planar] Contact Force (θ_goal=$(θ_goal), uw=$(uw_values[test_num_w]))")
     xlabel!("Time (s)")
     ylabel!("Contact Force")
@@ -474,7 +644,51 @@ end
 if SHOW_VIS
     vis = Visualizer()
     render(vis)
-    visualize!(vis, planarpush, q_sol, Δt=h)
+    if RUN_DISTURBANCE && num_w > 0 && @isdefined(q_dist_fb)
+        q_nom_vis = q_sol
+        q_dist_vis = q_dist_fb
+        Tvis = min(length(q_nom_vis), length(q_dist_vis))
+
+        OptimizationDynamics.default_background!(vis)
+        # i=1: nominal (transparent), i=2: disturbed (opaque)
+        OptimizationDynamics._create_planar_push!(
+            vis,
+            planarpush,
+            i=1,
+            tl=0.35,
+            box_color=RGBA(0.15, 0.45, 0.95, 0.30),
+            pusher_color=RGBA(0.15, 0.75, 0.95, 0.35),
+        )
+        OptimizationDynamics._create_planar_push!(
+            vis,
+            planarpush,
+            i=2,
+            tl=0.95,
+            box_color=RGBA(0.95, 0.25, 0.20, 0.95),
+            pusher_color=RGBA(0.95, 0.60, 0.20, 0.95),
+        )
+
+        anim = MeshCat.Animation(convert(Int, floor(1.0 / h)))
+        for t in 1:(Tvis - 1)
+            MeshCat.atframe(anim, t) do
+                OptimizationDynamics._set_planar_push!(vis, planarpush, q_nom_vis[t], i=1)
+                OptimizationDynamics._set_planar_push!(vis, planarpush, q_dist_vis[t], i=2)
+            end
+        end
+
+        settransform!(vis["/Cameras/default"],
+            OptimizationDynamics.compose(
+                OptimizationDynamics.Translation(0.0, 0.0, 50.0),
+                OptimizationDynamics.LinearMap(
+                    OptimizationDynamics.RotZ(0.5 * pi) * OptimizationDynamics.RotY(-pi / 2.5),
+                ),
+            ))
+        setprop!(vis["/Cameras/default/rotated/<object>"], "zoom", 50)
+        MeshCat.setanimation!(vis, anim)
+        println("visualization: nominal=blue/cyan transparent, disturbed-feedback=red/orange opaque")
+    else
+        visualize!(vis, planarpush, q_sol, Δt=h)
+    end
 end
 
 # ------------------------------

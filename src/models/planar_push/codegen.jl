@@ -3,7 +3,7 @@ path = @get_scratch!("planarpush")
 nq = planarpush.nq
 nu = planarpush.nu
 nc = planarpush.nc
-nz = num_var(planarpush)
+nz = OptimizationDynamics.RoboDojo.num_var(planarpush)
 nθ = 2 * planarpush.nq + planarpush.nu + planarpush.nw + 1 
 
 # Declare variables

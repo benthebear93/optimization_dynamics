@@ -48,8 +48,12 @@ include("../src/models/planar_push/model.jl")
 include("../src/models/planar_push/simulator.jl")
 include("../src/models/planar_push/visuals.jl")
 path_planarpush = @get_scratch!("planarpush")
+planarpush_residual_file = joinpath(path_planarpush, "residual.jld2")
+if !isfile(planarpush_residual_file)
+    include("../src/models/planar_push/codegen.jl")
+end
 # @show r_pp_func
-@load joinpath(path_planarpush, "residual.jld2") r_pp_func rz_pp_func rθ_pp_func rz_pp_array rθ_pp_array
+@load planarpush_residual_file r_pp_func rz_pp_func rθ_pp_func rz_pp_array rθ_pp_array
 
 # fixed planar push 
 include("../src/models/fixed_planar_push/model.jl")
